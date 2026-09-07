@@ -11,4 +11,10 @@ return [
     'deployment_tags' => env('UCS_DEPLOYMENT_TAGS', 'user_creatable_servers'),
     'deployment_ports' => env('UCS_DEPLOYMENT_PORTS', ''),
     'allowed_eggs' => env('UCS_ALLOWED_EGGS', ''),
+
+    'oidc_sync' => [
+        'enabled' => (bool) env('UCS_OIDC_SYNC_ENABLED', false),
+        'provider' => env('UCS_OIDC_SYNC_PROVIDER', 'authentik'),
+        'claim' => env('UCS_OIDC_SYNC_CLAIM', 'pelican_limits'),
+    ],
 ];
