@@ -16,11 +16,20 @@ use Boy132\UserCreatableServers\Listeners\SyncUserResourceLimitsFromOAuth;
 use Boy132\UserCreatableServers\Models\UserResourceLimits;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
+use SocialiteProviders\Manager\SocialiteWasCalled;
 
 class UserCreatableServersPluginProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->scoped(OAuthClaimContext::class, fn () => new OAuthClaimContext());
+
+        Event::listen(SocialiteWasCalled::class, function (SocialiteWasCalled $event): void {
+            // Defer the replacement until every service provider has booted so this
+            // registration deterministically replaces Pelican's Authentik driver.
+            $this->app->booted(fn () => $event->extendSocialite('authentik', AuthentikProvider::class));
+        });
+
         UserResource::registerCustomRelations(UserResourceLimitRelationManager::class);
 
         ListServers::registerCustomHeaderWidgets(HeaderWidgetPosition::Before, UserResourceLimitsOverview::class);
