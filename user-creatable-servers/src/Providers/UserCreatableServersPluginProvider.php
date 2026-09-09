@@ -4,7 +4,6 @@ namespace Boy132\UserCreatableServers\Providers;
 
 use App\Enums\HeaderActionPosition;
 use App\Enums\HeaderWidgetPosition;
-use App\Events\Auth\OAuthAuthenticated;
 use App\Filament\Admin\Resources\Users\UserResource;
 use App\Filament\App\Resources\Servers\Pages\ListServers;
 use App\Models\Role;
@@ -12,9 +11,11 @@ use App\Models\User;
 use Boy132\UserCreatableServers\Filament\Admin\Resources\Users\RelationManagers\UserResourceLimitRelationManager;
 use Boy132\UserCreatableServers\Filament\App\Widgets\UserResourceLimitsOverview;
 use Boy132\UserCreatableServers\Filament\Components\Actions\CreateServerAction;
-use Boy132\UserCreatableServers\Listeners\SyncUserResourceLimitsFromOAuth;
+use Boy132\UserCreatableServers\Listeners\SyncUserResourceLimitsOnLogin;
 use Boy132\UserCreatableServers\Models\UserResourceLimits;
 use Boy132\UserCreatableServers\OAuth\AuthentikProvider;
+use Boy132\UserCreatableServers\OAuth\OAuthClaimContext;
+use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use SocialiteProviders\Manager\SocialiteWasCalled;
@@ -45,6 +46,6 @@ class UserCreatableServersPluginProvider extends ServiceProvider
     {
         User::resolveRelationUsing('userResourceLimits', fn (User $user) => $user->belongsTo(UserResourceLimits::class, 'id', 'user_id'));
 
-        Event::listen(OAuthAuthenticated::class, SyncUserResourceLimitsFromOAuth::class);
+        Event::listen(Login::class, SyncUserResourceLimitsOnLogin::class);
     }
 }
