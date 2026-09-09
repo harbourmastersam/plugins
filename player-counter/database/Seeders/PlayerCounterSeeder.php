@@ -36,7 +36,7 @@ class PlayerCounterSeeder extends Seeder
             'query_port_variable' => null,
         ],
         [
-            'names' => ['The Forrest', 'TheForrest'],
+            'names' => ['The Forest', 'TheForest'],
             'query_type' => 'source',
             'query_port_offset' => 1,
             'query_port_variable' => null,
