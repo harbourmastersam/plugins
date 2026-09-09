@@ -14,6 +14,7 @@ use Boy132\UserCreatableServers\Filament\App\Widgets\UserResourceLimitsOverview;
 use Boy132\UserCreatableServers\Filament\Components\Actions\CreateServerAction;
 use Boy132\UserCreatableServers\Listeners\SyncUserResourceLimitsFromOAuth;
 use Boy132\UserCreatableServers\Models\UserResourceLimits;
+use Boy132\UserCreatableServers\OAuth\AuthentikProvider;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use SocialiteProviders\Manager\SocialiteWasCalled;
