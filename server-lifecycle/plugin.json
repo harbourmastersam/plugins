@@ -1,0 +1,14 @@
+{
+    "id": "server-lifecycle",
+    "name": "Server Lifecycle",
+    "author": "harbourmastersam",
+    "version": "0.1.0",
+    "description": "Fail-safe lifecycle management for inactive Pelican servers",
+    "category": "plugin",
+    "url": "https://github.com/harbourmastersam/plugins/tree/main/server-lifecycle",
+    "namespace": "HarbourmasterSam\\ServerLifecycle",
+    "class": "ServerLifecyclePlugin",
+    "panels": null,
+    "panel_version": null,
+    "composer_packages": null
+}
