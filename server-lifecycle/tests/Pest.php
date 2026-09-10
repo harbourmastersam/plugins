@@ -1,6 +1,6 @@
 <?php
 
-use Tests\TestCase;
+use App\Tests\TestCase;
 
 // Pelican's root phpunit.xml does not discover plugin test directories. Running
 // `vendor/bin/pest plugins/server-lifecycle/tests` loads this minimal bootstrap
