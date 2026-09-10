@@ -15,7 +15,18 @@ class CompleteLifecycleBackup
         $backup = $event->backup;
         $archive = ServerArchive::query()->where('backup_id', $backup->id)->where('status', LifecycleStatus::Archiving)->first();
         if (! $archive) return;
-        try { $this->service->handle($archive, $backup); }
-        catch (\Throwable) { $archive->update(['status' => LifecycleStatus::Failed, 'last_error' => $archive->last_error ?: 'Archive verification failed; live server retained.']); }
+        try {
+            $this->service->handle($archive, $backup);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            $archive->refresh();
+            if ($archive->status !== LifecycleStatus::ArchiveCreatedDeleteFailed) {
+                $archive->update([
+                    'status' => LifecycleStatus::Failed,
+                    'last_error' => 'Archive verification failed; live server retained.',
+                ]);
+            }
+        }
     }
 }

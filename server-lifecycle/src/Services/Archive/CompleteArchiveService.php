@@ -6,6 +6,7 @@ use App\Models\Backup;
 use App\Services\Servers\ServerDeletionService;
 use HarbourmasterSam\ServerLifecycle\Enums\LifecycleStatus;
 use HarbourmasterSam\ServerLifecycle\Models\ServerArchive;
+use HarbourmasterSam\ServerLifecycle\Models\ServerLifecycleState;
 use HarbourmasterSam\ServerLifecycle\Storage\ArchiveStorageInterface;
 use RuntimeException;
 
@@ -20,8 +21,19 @@ class CompleteArchiveService
         $server = $backup->server;
         $this->adopter->handle($archive, $backup);
         $server->unsetRelation('backups')->refresh();
-        try { $this->deletion->handle($server); }
-        catch (\Throwable $exception) { $archive->update(['status' => LifecycleStatus::ArchiveCreatedDeleteFailed, 'last_error' => 'Native server deletion failed; archive retained.']); throw $exception; }
+        try {
+            $this->deletion->handle($server);
+        } catch (\Throwable $exception) {
+            $archive->update([
+                'status' => LifecycleStatus::ArchiveCreatedDeleteFailed,
+                'last_error' => 'Native server deletion failed; archive retained.',
+            ]);
+            ServerLifecycleState::query()->where('server_id', $server->id)->update([
+                'status' => LifecycleStatus::ArchiveCreatedDeleteFailed,
+                'last_error' => 'Native server deletion failed; archive retained.',
+            ]);
+            throw $exception;
+        }
         $retention = data_get($archive->policy_snapshot, 'archive_retention_minutes');
         $archive->update(['status' => LifecycleStatus::Archived, 'archived_at' => now(), 'retention_expires_at' => $retention === null ? null : now()->addMinutes((int) $retention), 'last_error' => null]);
     }

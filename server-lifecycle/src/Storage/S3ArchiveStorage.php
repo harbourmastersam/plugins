@@ -13,7 +13,7 @@ class S3ArchiveStorage implements ArchiveStorageInterface
     private function clientAndBucket(ServerArchive $archive): array
     {
         $host = $archive->backupHost()->firstOrFail();
-        if ($host->getAttribute('type') !== 's3') {
+        if ($host->schema !== 's3') {
             throw new RuntimeException('Archive storage host is not an S3 host.');
         }
         $configuration = (array) $host->getAttribute('configuration');

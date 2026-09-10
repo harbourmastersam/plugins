@@ -2,6 +2,7 @@
 
 namespace HarbourmasterSam\ServerLifecycle\Services\Archive;
 
+use App\Enums\ContainerStatus;
 use App\Models\Server;
 use HarbourmasterSam\ServerLifecycle\Models\LifecyclePolicy;
 use RuntimeException;
@@ -14,10 +15,19 @@ class ArchiveEligibilityService
         foreach (['subusers', 'schedules', 'mounts'] as $relation) {
             if (method_exists($server, $relation) && $server->{$relation}()->exists()) throw new RuntimeException(__('server-lifecycle::strings.errors.unsupported_metadata', ['relation' => $relation]));
         }
-        if ($server->getAttribute('status') !== null || $server->getAttribute('suspended') || $server->getAttribute('is_transferring')) throw new RuntimeException(__('server-lifecycle::strings.errors.conflicting_state'));
-        // retrieveStatus throws if Wings cannot be contacted: intentionally fail closed.
+        if (! $server->isInstalled() || $server->isInConflictState() || $server->transfer()->exists()) {
+            throw new RuntimeException(__('server-lifecycle::strings.errors.conflicting_state'));
+        }
+
+        // retrieveStatus throws if Wings cannot be contacted. Missing is deliberately
+        // rejected even though Pelican's isOffline() helper also accepts that state.
         $status = $server->retrieveStatus();
-        if (! $status->isOffline()) throw new RuntimeException(__('server-lifecycle::strings.errors.must_be_offline'));
-        if ($policy->archiveBackupHost->getAttribute('type') !== 's3') throw new RuntimeException(__('server-lifecycle::strings.errors.s3_only'));
+        if ($status !== ContainerStatus::Offline) {
+            throw new RuntimeException(__('server-lifecycle::strings.errors.must_be_offline'));
+        }
+
+        if ($policy->archiveBackupHost->schema !== 's3') {
+            throw new RuntimeException(__('server-lifecycle::strings.errors.s3_only'));
+        }
     }
 }

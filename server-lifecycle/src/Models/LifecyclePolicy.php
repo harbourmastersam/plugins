@@ -22,12 +22,16 @@ class LifecyclePolicy extends Model
     {
         static::saving(function (self $policy): void {
             $host = BackupHost::query()->find($policy->archive_backup_host_id);
-            if (! $host || $host->getAttribute('type') !== 's3') {
+            if (! $host || $host->schema !== 's3') {
                 throw ValidationException::withMessages(['archive_backup_host_id' => __('server-lifecycle::strings.errors.s3_only')]);
             }
             if ($policy->is_default) {
-                self::query()->whereKeyNot($policy->getKey())->update(['is_default' => false]);
+                self::query()->whereKeyNot($policy->getKey())->update([
+                    'is_default' => false,
+                    'default_guard' => null,
+                ]);
             }
+            $policy->default_guard = $policy->is_default ? 1 : null;
         });
     }
 

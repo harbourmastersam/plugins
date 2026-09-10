@@ -13,9 +13,11 @@ class TrackServerActivity
     public function __construct(private MeaningfulActivity $meaningful) {}
     public function handle(ActivityLogged $event): void
     {
-        $activity = $event->activity;
+        $activity = $event->model->loadMissing('subjects.subject');
         if (! $this->meaningful->includes((string) $activity->event)) return;
-        $server = $activity->subjects->first(fn ($subject) => $subject instanceof Server);
+        $server = $activity->subjects
+            ->first(fn ($subject) => $subject->subject instanceof Server)
+            ?->subject;
         if (! $server) return;
         $state = ServerLifecycleState::query()->firstOrCreate(['server_id' => $server->id], ['last_activity_at' => now(), 'automatic_enabled' => false, 'status' => LifecycleStatus::Active]);
         $policy = $state->policy ?: \HarbourmasterSam\ServerLifecycle\Models\LifecyclePolicy::query()->where('enabled', true)->where('is_default', true)->first();

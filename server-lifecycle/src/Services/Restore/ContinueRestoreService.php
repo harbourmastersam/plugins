@@ -19,7 +19,22 @@ class ContinueRestoreService
         $backup = Backup::query()->create(['server_id' => $server->id, 'backup_host_id' => $archive->backup_host_id, 'uuid' => Str::uuid()->toString(), 'name' => 'Server Lifecycle restore bookkeeping', 'disk' => 's3', 'is_locked' => true, 'is_successful' => false]);
         $archive->update(['restore_backup_id' => $backup->id]);
         $server->update(['status' => ServerState::RestoringBackup]);
-        try { $this->daemon->setServer($server)->restore($backup, $this->storage->temporaryDownloadUrl($archive, CarbonInterval::minutes(5)), true); }
-        catch (\Throwable $e) { $archive->update(['status' => \HarbourmasterSam\ServerLifecycle\Enums\LifecycleStatus::RestoreFailed, 'last_error' => 'Wings restore request failed; archive retained.']); throw $e; }
+        try {
+            $this->daemon->setServer($server)->restore(
+                $backup,
+                $this->storage->temporaryDownloadUrl($archive, CarbonInterval::minutes(5)),
+                true,
+            );
+        } catch (\Throwable $exception) {
+            $server->update(['status' => null]);
+            Backup::query()->whereKey($backup->id)->delete();
+            $archive->update([
+                'status' => \HarbourmasterSam\ServerLifecycle\Enums\LifecycleStatus::RestoreFailed,
+                'restore_backup_id' => null,
+                'last_error' => 'Wings restore request failed; archive retained.',
+            ]);
+
+            throw $exception;
+        }
     }
 }

@@ -13,6 +13,8 @@ return new class extends Migration
             $table->string('name');
             $table->boolean('enabled')->default(false);
             $table->boolean('is_default')->default(false);
+            // NULL values may repeat, but the single non-NULL sentinel may not.
+            $table->unsignedTinyInteger('default_guard')->nullable()->unique();
             $table->unsignedInteger('archive_backup_host_id');
             $table->unsignedBigInteger('inactivity_minutes')->nullable();
             $table->boolean('running_counts_as_active')->default(true);
@@ -47,7 +49,7 @@ return new class extends Migration
             $table->json('original_node')->nullable();
             $table->json('original_allocations')->nullable();
             $table->unsignedInteger('backup_host_id');
-            $table->unsignedInteger('backup_id')->nullable()->unique();
+            $table->unsignedBigInteger('backup_id')->nullable()->unique();
             $table->string('object_key')->nullable();
             $table->uuid('original_backup_uuid')->nullable();
             $table->unsignedBigInteger('bytes')->nullable();
@@ -61,9 +63,10 @@ return new class extends Migration
             $table->timestamp('final_delivery_sent_at')->nullable();
             $table->timestamp('final_delivery_expires_at')->nullable();
             $table->unsignedInteger('restored_server_id')->nullable();
-            $table->unsignedInteger('restore_backup_id')->nullable()->unique();
+            $table->unsignedBigInteger('restore_backup_id')->nullable()->unique();
             $table->timestamp('restored_at')->nullable();
             $table->timestamp('remote_object_deleted_at')->nullable();
+            $table->string('deletion_reason')->nullable();
             $table->text('last_error')->nullable();
             $table->timestamps();
             $table->foreign('owner_id')->references('id')->on('users')->nullOnDelete();
@@ -92,12 +95,13 @@ return new class extends Migration
             $table->foreignId('warning_rule_id')->constrained('lifecycle_warning_rules')->cascadeOnDelete();
             $table->unsignedInteger('server_id')->nullable();
             $table->uuid('archive_id')->nullable();
+            $table->string('subject_key');
             $table->string('channel');
             $table->timestamp('target_at');
             $table->timestamp('delivered_at')->nullable();
             $table->text('last_error')->nullable();
             $table->timestamps();
-            $table->unique(['warning_rule_id', 'server_id', 'archive_id', 'channel', 'target_at'], 'lifecycle_delivery_cycle_unique');
+            $table->unique(['warning_rule_id', 'subject_key', 'channel', 'target_at'], 'lifecycle_delivery_cycle_unique');
         });
     }
 

@@ -19,7 +19,7 @@ class LifecycleBackupService
             'name' => 'Server Lifecycle final archive', 'ignored_files' => [], 'disk' => 's3', 'is_locked' => true, 'is_successful' => false,
         ]);
         try {
-            $this->adapters->get($host->getAttribute('type'))->createBackup($backup);
+            $this->adapters->get($host->schema)->createBackup($backup);
         } catch (\Throwable $exception) {
             $backup->delete();
             throw $exception;

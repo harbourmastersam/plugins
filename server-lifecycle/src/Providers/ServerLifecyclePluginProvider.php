@@ -10,7 +10,9 @@ use App\Filament\App\Resources\Servers\Pages\ListServers;
 use App\Models\Role;
 use Filament\Actions\Action;
 use HarbourmasterSam\ServerLifecycle\Console\Commands\EvaluateLifecycleCommand;
+use HarbourmasterSam\ServerLifecycle\Filament\App\Resources\ServerArchives\ServerArchiveResource;
 use HarbourmasterSam\ServerLifecycle\Listeners\CompleteLifecycleBackup;
+use HarbourmasterSam\ServerLifecycle\Listeners\CompleteLifecycleRestore;
 use HarbourmasterSam\ServerLifecycle\Listeners\ContinueRestoreAfterInstall;
 use HarbourmasterSam\ServerLifecycle\Listeners\TrackServerActivity;
 use HarbourmasterSam\ServerLifecycle\Storage\ArchiveStorageInterface;
@@ -26,11 +28,19 @@ class ServerLifecyclePluginProvider extends ServiceProvider
         $this->app->bind(ArchiveStorageInterface::class, S3ArchiveStorage::class);
         foreach (['lifecyclePolicy', 'serverArchive', 'serverLifecycle'] as $permission) Role::registerCustomDefaultPermissions($permission);
         Role::registerCustomModelIcon('serverArchive', 'tabler-archive');
-        ListServers::registerCustomHeaderActions(HeaderActionPosition::After, Action::make('archived_servers')->label(__('server-lifecycle::strings.archives.title'))->icon('tabler-archive')->url('/app/server-lifecycle/archives'));
+        ListServers::registerCustomHeaderActions(
+            HeaderActionPosition::After,
+            Action::make('archived_servers')
+                ->label(__('server-lifecycle::strings.archives.title'))
+                ->icon('tabler-archive')
+                ->url(fn (): string => ServerArchiveResource::getUrl(panel: 'app')),
+        );
     }
     public function boot(): void
     {
+        $this->loadViewsFrom(plugin_path('server-lifecycle', 'resources/views'), 'server-lifecycle');
         Event::listen(ActivityLogged::class, TrackServerActivity::class);
+        Event::listen(ActivityLogged::class, CompleteLifecycleRestore::class);
         Event::listen(BackupCompleted::class, CompleteLifecycleBackup::class);
         Event::listen(Installed::class, ContinueRestoreAfterInstall::class);
         Schedule::command(EvaluateLifecycleCommand::class)->everyMinute()->withoutOverlapping();

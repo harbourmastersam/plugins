@@ -2,6 +2,16 @@
 return [
     'settings' => ['title' => 'Server lifecycle settings', 'saved' => 'Server lifecycle settings saved'],
     'archives' => ['title' => 'Archived Servers'],
+    'notifications' => [
+        'view' => 'View in Pelican',
+        'download' => 'Download archive',
+        'archive_title' => 'Server archival warning',
+        'archive_body' => ':server is scheduled for archival at :date.',
+        'delete_title' => 'Archived server deletion warning',
+        'delete_body' => ':server is scheduled for permanent deletion at :date.',
+        'final_title' => 'Final archived server delivery',
+        'final_body' => 'The final copy of :server is available during its deletion grace period.',
+    ],
     'errors' => [
         's3_only' => 'Long-term archives require a Pelican BackupHost using the S3 schema.',
         'databases_block_archive' => 'This server has attached Pelican databases. Version 1 cannot safely archive their contents, so archival is refused.',
