@@ -6,6 +6,7 @@ use App\Models\Server;
 use App\Services\Servers\ServerDeletionService;
 use HarbourmasterSam\ServerLifecycle\Enums\LifecycleStatus;
 use HarbourmasterSam\ServerLifecycle\Models\LifecyclePolicy;
+use HarbourmasterSam\ServerLifecycle\Enums\RetryDeletionDecision;
 use HarbourmasterSam\ServerLifecycle\Models\ServerArchive;
 use HarbourmasterSam\ServerLifecycle\Models\ServerLifecycleState;
 use HarbourmasterSam\ServerLifecycle\Storage\ArchiveStorageInterface;
@@ -18,7 +19,7 @@ class RetryServerDeletionService
     public function __construct(
         private ArchiveStorageInterface $storage,
         private ServerDeletionService $deletion,
-        private ArchiveEligibilityService $eligibility,
+        private RetryDeletionEligibilityService $eligibility,
     ) {}
 
     public function handle(ServerArchive $archive): void
@@ -53,10 +54,20 @@ class RetryServerDeletionService
             return;
         }
 
-        $policy = LifecyclePolicy::query()->findOrFail(data_get($archive->policy_snapshot, 'policy_id'));
-        // This includes a fresh exact-Offline Wings check and fails closed when
-        // Wings is unreachable or the live server acquired conflicting metadata.
-        $this->eligibility->assertEligible($server, $policy->load('archiveBackupHost'));
+        try {
+            $decision = $this->eligibility->decide($server);
+        } catch (Throwable $exception) {
+            $archive->update([
+                'retry_count' => $archive->retry_count + 1,
+                'retry_after' => now()->addMinutes(min(60, 2 ** min(6, $archive->retry_count))),
+                'last_error' => 'Wings status could not be confirmed; deletion retry remains blocked.',
+            ]);
+            throw $exception;
+        }
+        if ($decision === RetryDeletionDecision::RevokeAuthority) {
+            $this->cancelAuthority($archive, $state);
+            return;
+        }
         $state->refresh();
         if ($state->status !== LifecycleStatus::ArchiveCreatedDeleteFailed
             || $state->current_archive_id !== $archive->id

@@ -42,6 +42,7 @@ class LifecyclePage extends Page
         return [
             Action::make('reset_activity')
                 ->label('Reset inactivity timer')
+                ->authorize(fn (): bool => (int) $server->owner_id === (int) auth()->id())
                 ->action(function (PolicyResolver $policies): void {
                     $policy = $policies->resolve($this->lifecycleState);
                     $this->lifecycleState->update([

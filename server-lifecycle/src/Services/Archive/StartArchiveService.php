@@ -72,12 +72,14 @@ class StartArchiveService
         });
 
         try {
-            $backup = $this->backups->initiate($server, $policy->archiveBackupHost);
+            $backup = $this->backups->create($server, $policy->archiveBackupHost);
+            // The callback lookup is durable before any daemon request can complete.
             $archive->update([
                 'backup_id' => $backup->id,
                 'original_backup_uuid' => $backup->uuid,
                 'object_key' => "$server->uuid/$backup->uuid.tar.gz",
             ]);
+            $this->backups->initiate($backup);
 
             return $archive;
         } catch (Throwable $exception) {

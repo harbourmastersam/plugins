@@ -12,22 +12,23 @@ class LifecycleBackupService
 {
     public function __construct(private BackupAdapterService $adapters) {}
 
-    public function initiate(Server $server, BackupHost $host): Backup
+    public function create(Server $server, BackupHost $host): Backup
     {
-        $backup = Backup::query()->create([
-            'server_id' => $server->id, 'backup_host_id' => $host->id, 'uuid' => Str::uuid()->toString(),
+        return Backup::query()->create([
+            'server_id' => $server->id,
+            'backup_host_id' => $host->id,
+            'uuid' => Str::uuid()->toString(),
             'name' => 'Server Lifecycle final archive',
             'ignored_files' => [],
             'is_locked' => true,
             'is_scheduled' => true,
             'is_successful' => false,
         ]);
-        try {
-            $this->adapters->get($host->schema)->createBackup($backup);
-        } catch (\Throwable $exception) {
-            $backup->delete();
-            throw $exception;
-        }
-        return $backup;
+    }
+
+    public function initiate(Backup $backup): void
+    {
+        $backup->loadMissing('backupHost');
+        $this->adapters->get($backup->backupHost->schema)->createBackup($backup);
     }
 }

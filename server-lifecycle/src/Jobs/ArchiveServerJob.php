@@ -2,6 +2,7 @@
 
 namespace HarbourmasterSam\ServerLifecycle\Jobs;
 
+use App\Enums\ContainerStatus;
 use App\Models\Server;
 use HarbourmasterSam\ServerLifecycle\Enums\LifecycleStatus;
 use HarbourmasterSam\ServerLifecycle\Models\ServerLifecycleState;
@@ -40,6 +41,25 @@ class ArchiveServerJob implements ShouldBeUnique, ShouldQueue
             || ! in_array($state->status, [LifecycleStatus::Active, LifecycleStatus::Warning], true)
             || ! $state->archive_due_at?->isPast()
             || $state->exempt_until?->isFuture()) {
+            return;
+        }
+
+        // Poll only an automatically due server. A transport exception leaves
+        // activity untouched and fails closed; Missing is likewise not activity.
+        $status = $server->retrieveStatus();
+        if ($status === ContainerStatus::Missing) {
+            return;
+        }
+        if ($status !== ContainerStatus::Offline) {
+            $observedAt = now();
+            $state->update([
+                'last_activity_at' => $observedAt,
+                'last_activity_event' => 'server:lifecycle.observed-running',
+                'archive_due_at' => $policy->inactivity_minutes === null
+                    ? null
+                    : $observedAt->copy()->addMinutes($policy->inactivity_minutes),
+                'status' => LifecycleStatus::Active,
+            ]);
             return;
         }
 

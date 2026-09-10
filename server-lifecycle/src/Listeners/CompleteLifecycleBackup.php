@@ -15,7 +15,7 @@ class CompleteLifecycleBackup
         $backup = $event->backup;
         $archive = ServerArchive::query()
             ->where('backup_id', $backup->id)
-            ->whereIn('status', [LifecycleStatus::Archiving, LifecycleStatus::ArchiveCancelled])
+            ->whereIn('status', [LifecycleStatus::Archiving, LifecycleStatus::ArchiveCancelled, LifecycleStatus::ArchiveFailed])
             ->first();
         if (! $archive) return;
         try {
