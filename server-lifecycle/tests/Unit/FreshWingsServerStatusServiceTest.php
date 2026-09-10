@@ -55,7 +55,10 @@ it('classifies fresh Wings responses without treating errors as missing', functi
 ]);
 
 it('performs a new Wings request for every status read', function (): void {
-    Http::fakeSequence()->push(['state' => 'offline'])->push(['state' => 'running']);
+    $headers = ['User-Agent' => 'Pelican Wings/1.0.0 (id:test-token-id)'];
+    Http::fakeSequence()
+        ->push(['state' => 'offline'], 200, $headers)
+        ->push(['state' => 'running'], 200, $headers);
     $service = statusService();
     $server = statusServer();
 
@@ -73,6 +76,20 @@ it('never converts a transport failure into confirmed missing', function (): voi
 
 it('rejects an intermediary 404 without the expected Wings token identity', function (): void {
     Http::fake(['*' => Http::response([], 404, ['User-Agent' => 'cloud-proxy'])]);
+
+    expect(fn () => statusService()->get(statusServer()))->toThrow(Throwable::class);
+});
+
+it('rejects a Wings 404 from a different node token', function (): void {
+    Http::fake(['*' => Http::response([], 404, [
+        'User-Agent' => 'Pelican Wings/1.0.0 (id:different-node-id)',
+    ])]);
+
+    expect(fn () => statusService()->get(statusServer()))->toThrow(Throwable::class);
+});
+
+it('rejects a 404 with no Wings identity', function (): void {
+    Http::fake(['*' => Http::response([], 404)]);
 
     expect(fn () => statusService()->get(statusServer()))->toThrow(Throwable::class);
 });

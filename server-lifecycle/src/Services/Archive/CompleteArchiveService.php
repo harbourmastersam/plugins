@@ -37,7 +37,9 @@ class CompleteArchiveService
 
             [$server, $state] = $this->revalidateAttempt($archive, $backup);
             $policy = LifecyclePolicy::query()->findOrFail(data_get($archive->policy_snapshot, 'policy_id'));
-            $this->eligibility->assertEligible($server, $policy->load('archiveBackupHost'));
+            // Native server deletion removes every remaining Backup row. The
+            // adopted lifecycle backup is the sole permitted row at this point.
+            $this->eligibility->assertEligible($server, $policy->load('archiveBackupHost'), $backup->id);
             $this->assertFreshOffline($server);
 
             // Re-read after the Wings call so activity occurring during status

@@ -9,9 +9,16 @@ use RuntimeException;
 
 class ArchiveEligibilityService
 {
-    public function assertEligible(Server $server, LifecyclePolicy $policy): void
+    public function assertEligible(Server $server, LifecyclePolicy $policy, ?int $allowedBackupId = null): void
     {
         if ($server->databases()->exists()) throw new RuntimeException(__('server-lifecycle::strings.errors.databases_block_archive'));
+        $backups = $server->backups();
+        if ($allowedBackupId !== null) {
+            $backups->where('id', '!=', $allowedBackupId);
+        }
+        if ($backups->exists()) {
+            throw new RuntimeException(__('server-lifecycle::strings.errors.backups_block_archive'));
+        }
         foreach (['subusers', 'schedules', 'mounts'] as $relation) {
             if (method_exists($server, $relation) && $server->{$relation}()->exists()) throw new RuntimeException(__('server-lifecycle::strings.errors.unsupported_metadata', ['relation' => $relation]));
         }
