@@ -4,25 +4,38 @@ namespace Boy132\UserCreatableServers\OAuth;
 
 class OAuthClaimContext
 {
-    private bool $oauthLogin = false;
+    private bool $oauthCallbackObserved = false;
 
     private ?string $provider = null;
 
     private bool $claimPresent = false;
 
+    private bool $rawAttributesInspectable = false;
+
     private mixed $limits = null;
 
-    public function capture(string $provider, bool $claimPresent, mixed $limits): void
+    public function capture(
+        string $provider,
+        bool $rawAttributesInspectable,
+        bool $claimPresent = false,
+        mixed $limits = null,
+    ): void
     {
-        $this->oauthLogin = true;
+        $this->oauthCallbackObserved = true;
         $this->provider = $provider;
+        $this->rawAttributesInspectable = $rawAttributesInspectable;
         $this->claimPresent = $claimPresent;
         $this->limits = $limits;
     }
 
     public function isOAuthLogin(): bool
     {
-        return $this->oauthLogin;
+        return $this->oauthCallbackObserved;
+    }
+
+    public function rawAttributesInspectable(): bool
+    {
+        return $this->rawAttributesInspectable;
     }
 
     public function provider(): ?string

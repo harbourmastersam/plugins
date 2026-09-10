@@ -12,9 +12,12 @@ return [
     'deployment_ports' => env('UCS_DEPLOYMENT_PORTS', ''),
     'allowed_eggs' => env('UCS_ALLOWED_EGGS', ''),
 
-    'oidc_sync' => [
-        'enabled' => (bool) env('UCS_OIDC_SYNC_ENABLED', false),
-        'provider' => env('UCS_OIDC_SYNC_PROVIDER', 'authentik'),
-        'claim' => env('UCS_OIDC_SYNC_CLAIM', 'pelican_limits'),
+    'oauth_sync' => [
+        'enabled' => (bool) env('UCS_OAUTH_SYNC_ENABLED', env('UCS_OIDC_SYNC_ENABLED', false)),
+        'providers' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('UCS_OAUTH_SYNC_PROVIDERS', env('UCS_OIDC_SYNC_PROVIDER', 'authentik'))),
+        ), fn (string $provider) => $provider !== '')),
+        'claim' => env('UCS_OAUTH_SYNC_CLAIM', env('UCS_OIDC_SYNC_CLAIM', 'pelican_limits')),
     ],
 ];

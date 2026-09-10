@@ -11,7 +11,7 @@ use App\Models\User;
 use Boy132\UserCreatableServers\Filament\Admin\Resources\Users\RelationManagers\UserResourceLimitRelationManager;
 use Boy132\UserCreatableServers\Filament\App\Widgets\UserResourceLimitsOverview;
 use Boy132\UserCreatableServers\Filament\Components\Actions\CreateServerAction;
-use Boy132\UserCreatableServers\Http\Middleware\EnsureAuthentikProvider;
+use Boy132\UserCreatableServers\Http\Middleware\CaptureOAuthClaims;
 use Boy132\UserCreatableServers\Listeners\SyncUserResourceLimitsOnLogin;
 use Boy132\UserCreatableServers\Models\UserResourceLimits;
 use Boy132\UserCreatableServers\OAuth\OAuthClaimContext;
@@ -37,7 +37,7 @@ class UserCreatableServersPluginProvider extends ServiceProvider
 
     public function boot(): void
     {
-        $this->app['router']->pushMiddlewareToGroup('web', EnsureAuthentikProvider::class);
+        $this->app['router']->pushMiddlewareToGroup('web', CaptureOAuthClaims::class);
 
         User::resolveRelationUsing('userResourceLimits', fn (User $user) => $user->belongsTo(UserResourceLimits::class, 'id', 'user_id'));
 

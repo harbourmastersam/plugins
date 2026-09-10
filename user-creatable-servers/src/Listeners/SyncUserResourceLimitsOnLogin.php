@@ -13,7 +13,7 @@ class SyncUserResourceLimitsOnLogin
 {
     public function handle(Login $event): void
     {
-        if (!config('user-creatable-servers.oidc_sync.enabled')) {
+        if (!config('user-creatable-servers.oauth_sync.enabled')) {
             return;
         }
 
@@ -23,11 +23,16 @@ class SyncUserResourceLimitsOnLogin
 
         $context = app(OAuthClaimContext::class);
 
-        if (!$context->isOAuthLogin()) {
+        if (!$context->isOAuthLogin() || !$this->providerSelected($context->provider())) {
             return;
         }
 
-        if ($context->provider() !== config('user-creatable-servers.oidc_sync.provider', 'authentik')) {
+        if (!$context->rawAttributesInspectable()) {
+            Log::warning('Unable to inspect OAuth user attributes for resource limits.', [
+                'user_id' => $event->user->id,
+                'provider' => $context->provider(),
+            ]);
+
             return;
         }
 
@@ -40,8 +45,9 @@ class SyncUserResourceLimitsOnLogin
         }
 
         if (!is_array($limits)) {
-            Log::warning('Invalid Authentik resource limits received.', [
+            Log::warning('Invalid OAuth resource limits received.', [
                 'user_id' => $event->user->id,
+                'provider' => $context->provider(),
                 'errors' => ['claim' => ['The resource limits claim must be an array.']],
             ]);
 
@@ -58,8 +64,9 @@ class SyncUserResourceLimitsOnLogin
         ]);
 
         if ($validator->fails()) {
-            Log::warning('Invalid Authentik resource limits received.', [
+            Log::warning('Invalid OAuth resource limits received.', [
                 'user_id' => $event->user->id,
+                'provider' => $context->provider(),
                 'errors' => $validator->errors()->toArray(),
             ]);
 
@@ -79,5 +86,18 @@ class SyncUserResourceLimitsOnLogin
                 'server_limit' => $limits['server_limit'],
             ],
         );
+    }
+
+    private function providerSelected(?string $providerId): bool
+    {
+        if ($providerId === null) {
+            return false;
+        }
+
+        $providers = config('user-creatable-servers.oauth_sync.providers', []);
+        $providers = is_array($providers) ? $providers : explode(',', (string) $providers);
+        $providers = array_map('trim', $providers);
+
+        return in_array('*', $providers, true) || in_array($providerId, $providers, true);
     }
 }
