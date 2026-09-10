@@ -34,12 +34,17 @@ class CapturingSocialiteProvider implements Provider
             }
 
             $claimPresent = Arr::has($raw, $this->claimName);
+            $limits = $claimPresent ? data_get($raw, $this->claimName) : null;
+
+            if (is_object($limits)) {
+                $limits = get_object_vars($limits);
+            }
 
             $this->context->capture(
                 provider: $this->providerId,
                 rawAttributesInspectable: true,
                 claimPresent: $claimPresent,
-                limits: $claimPresent ? data_get($raw, $this->claimName) : null,
+                limits: $limits,
             );
         } catch (Throwable) {
             // Claim inspection must never prevent the underlying OAuth login.
