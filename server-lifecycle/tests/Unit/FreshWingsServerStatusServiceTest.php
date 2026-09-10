@@ -2,15 +2,27 @@
 
 use App\Models\Node;
 use App\Models\Server;
+use App\Repositories\Daemon\DaemonServerRepository;
 use HarbourmasterSam\ServerLifecycle\Enums\AuthoritativeServerState;
 use HarbourmasterSam\ServerLifecycle\Services\Status\FreshWingsServerStatusService;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Http;
+
+function statusService(): FreshWingsServerStatusService
+{
+    return new FreshWingsServerStatusService(app(DaemonServerRepository::class));
+}
 
 function statusServer(): Server
 {
     $node = new Node();
-    $node->forceFill(['fqdn' => 'wings.test', 'scheme' => 'https', 'daemon_listen' => 8080, 'daemon_token' => 'test-token']);
+    $node->forceFill([
+        'fqdn' => 'wings.test',
+        'scheme' => 'https',
+        'daemon_listen' => 8080,
+        'daemon_token' => 'test-token',
+        'daemon_token_id' => 'test-token-id',
+    ]);
     $server = new Server();
     $server->forceFill(['uuid' => '00000000-0000-0000-0000-000000000001']);
     $server->setRelation('node', $node);
@@ -19,8 +31,10 @@ function statusServer(): Server
 }
 
 it('classifies fresh Wings responses without treating errors as missing', function (int $status, array $body, ?AuthoritativeServerState $expected): void {
-    Http::fake(['*' => Http::response($body, $status)]);
-    $call = fn () => (new FreshWingsServerStatusService())->get(statusServer());
+    Http::fake(['*' => Http::response($body, $status, [
+        'User-Agent' => 'Pelican Wings/1.0.0 (id:test-token-id)',
+    ])]);
+    $call = fn () => statusService()->get(statusServer());
 
     $expected === null
         ? expect($call)->toThrow(RuntimeException::class)
@@ -42,7 +56,7 @@ it('classifies fresh Wings responses without treating errors as missing', functi
 
 it('performs a new Wings request for every status read', function (): void {
     Http::fakeSequence()->push(['state' => 'offline'])->push(['state' => 'running']);
-    $service = new FreshWingsServerStatusService();
+    $service = statusService();
     $server = statusServer();
 
     expect($service->get($server))->toBe(AuthoritativeServerState::Offline)
@@ -53,6 +67,20 @@ it('performs a new Wings request for every status read', function (): void {
 it('never converts a transport failure into confirmed missing', function (): void {
     Http::fake(['*' => fn () => throw new ConnectionException('connection refused')]);
 
-    expect(fn () => (new FreshWingsServerStatusService())->get(statusServer()))
+    expect(fn () => statusService()->get(statusServer()))
         ->toThrow(RuntimeException::class, 'could not be contacted');
+});
+
+it('rejects an intermediary 404 without the expected Wings token identity', function (): void {
+    Http::fake(['*' => Http::response([], 404, ['User-Agent' => 'cloud-proxy'])]);
+
+    expect(fn () => statusService()->get(statusServer()))->toThrow(Throwable::class);
+});
+
+it('accepts a validated Wings 404 as confirmed missing', function (): void {
+    Http::fake(['*' => Http::response([], 404, [
+        'User-Agent' => 'Pelican Wings/1.0.0 (id:test-token-id)',
+    ])]);
+
+    expect(statusService()->get(statusServer()))->toBe(AuthoritativeServerState::ConfirmedMissing);
 });

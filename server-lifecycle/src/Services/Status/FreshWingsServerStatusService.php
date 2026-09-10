@@ -3,17 +3,25 @@
 namespace HarbourmasterSam\ServerLifecycle\Services\Status;
 
 use App\Models\Server;
+use App\Repositories\Daemon\DaemonServerRepository;
 use HarbourmasterSam\ServerLifecycle\Enums\AuthoritativeServerState;
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 class FreshWingsServerStatusService
 {
+    public function __construct(private DaemonServerRepository $repository) {}
+
     public function get(Server $server): AuthoritativeServerState
     {
         try {
-            $response = Http::daemon($server->node)->get("/api/servers/{$server->uuid}");
+            // getHttpClient() adds Pelican's node-token/User-Agent validation to
+            // the normal authenticated daemon client. Do not replace this with
+            // getDetails(), which deliberately collapses failures into Missing.
+            $response = $this->repository
+                ->setServer($server)
+                ->getHttpClient()
+                ->get("/api/servers/{$server->uuid}");
         } catch (ConnectionException $exception) {
             throw new RuntimeException('Wings could not be contacted for an authoritative status check.', previous: $exception);
         }
