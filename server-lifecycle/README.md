@@ -60,6 +60,10 @@ The manifest uses Laravel's encrypted array cast; preserve `APP_KEY`. Archive qu
 
 Never begin with a production game server.
 
+From a Pelican checkout containing this repository at `plugins/`, execute the
+plugin suite explicitly with `vendor/bin/pest plugins/server-lifecycle/tests`.
+The normal Pelican PHPUnit suites do not discover plugin-owned test directories.
+
 1. Create a small disposable server and S3-compatible BackupHost.
 2. Assign a short explicit policy and enable lifecycle for only that server.
 3. Generate meaningful activity; confirm the due time resets and warnings arrive once.

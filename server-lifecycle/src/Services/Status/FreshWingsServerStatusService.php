@@ -27,7 +27,9 @@ class FreshWingsServerStatusService
         } catch (ConnectionException $exception) {
             throw new RuntimeException('Wings could not be contacted for an authoritative status check.', previous: $exception);
         } catch (RequestException $exception) {
-            if ($exception->response && $this->isConfirmedWings404($server, $exception->response)) {
+            if ($exception->response
+                && $exception->response->status() === 404
+                && $this->isExpectedWingsResponse($server, $exception->response)) {
                 return AuthoritativeServerState::ConfirmedMissing;
             }
 
@@ -35,7 +37,7 @@ class FreshWingsServerStatusService
         }
 
         if ($response->status() === 404) {
-            if ($this->isConfirmedWings404($server, $response)) {
+            if ($this->isExpectedWingsResponse($server, $response)) {
                 return AuthoritativeServerState::ConfirmedMissing;
             }
 
@@ -43,6 +45,9 @@ class FreshWingsServerStatusService
         }
         if (! $response->successful()) {
             throw new RuntimeException("Wings authoritative status request failed with HTTP {$response->status()}.");
+        }
+        if (! $this->isExpectedWingsResponse($server, $response)) {
+            throw new RuntimeException('The authoritative response did not contain the expected Wings node identity.');
         }
 
         $state = $response->json('state');
@@ -58,18 +63,14 @@ class FreshWingsServerStatusService
         };
     }
 
-    private function isConfirmedWings404(Server $server, Response $response): bool
+    private function isExpectedWingsResponse(Server $server, Response $response): bool
     {
-        if ($response->status() !== 404) {
-            return false;
-        }
-
         $userAgent = $response->header('User-Agent');
         $expectedTokenId = (string) $server->node->daemon_token_id;
         if (! is_string($userAgent) || $expectedTokenId === '') {
             return false;
         }
 
-        return preg_match('/\APelican Wings\/[^\s()]+ \(id:'.preg_quote($expectedTokenId, '/').'\)\z/', $userAgent) === 1;
+        return preg_match('/\APelican Wings\/v[^\s()]+ \(id:'.preg_quote($expectedTokenId, '/').'\)\z/', $userAgent) === 1;
     }
 }

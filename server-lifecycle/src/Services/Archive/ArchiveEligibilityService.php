@@ -12,13 +12,7 @@ class ArchiveEligibilityService
     public function assertEligible(Server $server, LifecyclePolicy $policy, ?int $allowedBackupId = null): void
     {
         if ($server->databases()->exists()) throw new RuntimeException(__('server-lifecycle::strings.errors.databases_block_archive'));
-        $backups = $server->backups();
-        if ($allowedBackupId !== null) {
-            $backups->where('id', '!=', $allowedBackupId);
-        }
-        if ($backups->exists()) {
-            throw new RuntimeException(__('server-lifecycle::strings.errors.backups_block_archive'));
-        }
+        $this->assertNoUnexpectedBackups($server, $allowedBackupId);
         foreach (['subusers', 'schedules', 'mounts'] as $relation) {
             if (method_exists($server, $relation) && $server->{$relation}()->exists()) throw new RuntimeException(__('server-lifecycle::strings.errors.unsupported_metadata', ['relation' => $relation]));
         }
@@ -34,6 +28,19 @@ class ArchiveEligibilityService
 
         if ($policy->archiveBackupHost->schema !== 's3') {
             throw new RuntimeException(__('server-lifecycle::strings.errors.s3_only'));
+        }
+    }
+
+    public function assertNoUnexpectedBackups(Server $server, ?int $allowedBackupId = null): void
+    {
+        // Always issue a fresh query: this guard protects the finalization race
+        // and must never inspect a previously loaded backups relation.
+        $backups = $server->backups();
+        if ($allowedBackupId !== null) {
+            $backups->where('id', '!=', $allowedBackupId);
+        }
+        if ($backups->exists()) {
+            throw new RuntimeException(__('server-lifecycle::strings.errors.backups_block_archive'));
         }
     }
 }

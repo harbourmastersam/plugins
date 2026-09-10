@@ -60,6 +60,7 @@ class CompleteArchiveService
                 || $state->last_activity_at->gt($archive->activity_snapshot_at)) {
                 throw new RuntimeException('Archive attempt changed during final status validation.');
             }
+            $this->eligibility->assertNoUnexpectedBackups($server, $backup->id);
         } catch (Throwable $exception) {
             $this->failures->failBeforeAdoption(
                 $archive,
@@ -71,6 +72,11 @@ class CompleteArchiveService
 
         $this->adopter->handle($archive, $backup);
         $server->unsetRelation('backups')->refresh();
+        if ($server->backups()->exists()) {
+            $this->supersedeForUnexpectedBackup($archive, $state);
+
+            return;
+        }
 
         try {
             $this->deletion->handle($server);
@@ -93,6 +99,25 @@ class CompleteArchiveService
             'status' => LifecycleStatus::Archived,
             'archived_at' => now(),
             'retention_expires_at' => $retention === null ? null : now()->addMinutes((int) $retention),
+            'last_error' => null,
+        ]);
+    }
+
+    private function supersedeForUnexpectedBackup(ServerArchive $archive, ServerLifecycleState $state): void
+    {
+        $retention = data_get($archive->policy_snapshot, 'archive_retention_minutes');
+        $now = now();
+        $archive->update([
+            'status' => LifecycleStatus::ArchiveSuperseded,
+            'archived_at' => $archive->archived_at ?? $now,
+            'retention_expires_at' => $archive->retention_expires_at
+                ?? ($retention === null ? null : $now->copy()->addMinutes((int) $retention)),
+            'retry_after' => null,
+            'last_error' => 'Live server retained because a new Pelican backup was created during archive finalization.',
+        ]);
+        $state->update([
+            'status' => LifecycleStatus::Active,
+            'current_archive_id' => null,
             'last_error' => null,
         ]);
     }

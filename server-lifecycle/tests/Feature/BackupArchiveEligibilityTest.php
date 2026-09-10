@@ -9,39 +9,40 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-function backupEligibilityPolicy(): LifecyclePolicy
+/** @return array{Server, LifecyclePolicy, BackupHost} */
+function backupEligibilityContext(): array
 {
-    $host = new BackupHost();
-    $host->forceFill(['schema' => 's3']);
-    $policy = new LifecyclePolicy();
+    $server = Server::factory()->create();
+    $host = BackupHost::factory()->create(['schema' => 's3']);
+    $policy = new LifecyclePolicy(['archive_backup_host_id' => $host->id]);
     $policy->setRelation('archiveBackupHost', $host);
 
-    return $policy;
+    return [$server, $policy, $host];
 }
 
 it('blocks lifecycle archival when an ordinary Pelican backup exists', function (): void {
-    $server = Server::factory()->create();
-    Backup::factory()->create(['server_id' => $server->id]);
+    [$server, $policy, $host] = backupEligibilityContext();
+    Backup::factory()->create(['server_id' => $server->id, 'backup_host_id' => $host->id]);
 
-    expect(fn () => app(ArchiveEligibilityService::class)->assertEligible($server, backupEligibilityPolicy()))
+    expect(fn () => app(ArchiveEligibilityService::class)->assertEligible($server, $policy))
         ->toThrow(RuntimeException::class, 'existing Pelican backups');
 });
 
 it('allows the exact lifecycle backup while rejecting any additional backup', function (): void {
-    $server = Server::factory()->create();
-    $lifecycleBackup = Backup::factory()->create(['server_id' => $server->id]);
+    [$server, $policy, $host] = backupEligibilityContext();
+    $lifecycleBackup = Backup::factory()->create(['server_id' => $server->id, 'backup_host_id' => $host->id]);
 
     app(ArchiveEligibilityService::class)->assertEligible(
         $server,
-        backupEligibilityPolicy(),
+        $policy,
         $lifecycleBackup->id,
     );
 
-    $ordinaryBackup = Backup::factory()->create(['server_id' => $server->id]);
+    $ordinaryBackup = Backup::factory()->create(['server_id' => $server->id, 'backup_host_id' => $host->id]);
 
     expect(fn () => app(ArchiveEligibilityService::class)->assertEligible(
         $server,
-        backupEligibilityPolicy(),
+        $policy,
         $lifecycleBackup->id,
     ))->toThrow(RuntimeException::class, 'existing Pelican backups')
         ->and($ordinaryBackup->fresh())->not->toBeNull();
