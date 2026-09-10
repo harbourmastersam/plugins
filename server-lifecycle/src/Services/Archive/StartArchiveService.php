@@ -3,11 +3,13 @@
 namespace HarbourmasterSam\ServerLifecycle\Services\Archive;
 
 use App\Models\Server;
+use HarbourmasterSam\ServerLifecycle\Enums\AuthoritativeServerState;
 use HarbourmasterSam\ServerLifecycle\Enums\LifecycleStatus;
 use HarbourmasterSam\ServerLifecycle\Models\LifecyclePolicy;
 use HarbourmasterSam\ServerLifecycle\Models\ServerArchive;
 use HarbourmasterSam\ServerLifecycle\Models\ServerLifecycleState;
 use HarbourmasterSam\ServerLifecycle\Services\Policy\LifecyclePolicySnapshotService;
+use HarbourmasterSam\ServerLifecycle\Services\Status\FreshWingsServerStatusService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -20,6 +22,7 @@ class StartArchiveService
         private ServerManifestService $manifests,
         private LifecycleBackupService $backups,
         private LifecyclePolicySnapshotService $snapshots,
+        private FreshWingsServerStatusService $status,
     ) {}
 
     public function handle(Server $server, LifecyclePolicy $policy): ServerArchive
@@ -33,6 +36,9 @@ class StartArchiveService
         $server = $server->fresh();
         $policy->loadMissing('archiveBackupHost');
         $this->eligibility->assertEligible($server, $policy);
+        if ($this->status->get($server) !== AuthoritativeServerState::Offline) {
+            throw new RuntimeException(__('server-lifecycle::strings.errors.must_be_offline'));
+        }
         $manifest = $this->manifests->capture($server);
 
         [$archive, $state] = DB::transaction(function () use ($server, $policy, $manifest): array {

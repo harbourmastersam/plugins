@@ -5,10 +5,12 @@ namespace HarbourmasterSam\ServerLifecycle\Services\Archive;
 use App\Models\Backup;
 use App\Models\Server;
 use App\Services\Servers\ServerDeletionService;
+use HarbourmasterSam\ServerLifecycle\Enums\AuthoritativeServerState;
 use HarbourmasterSam\ServerLifecycle\Enums\LifecycleStatus;
 use HarbourmasterSam\ServerLifecycle\Models\LifecyclePolicy;
 use HarbourmasterSam\ServerLifecycle\Models\ServerArchive;
 use HarbourmasterSam\ServerLifecycle\Models\ServerLifecycleState;
+use HarbourmasterSam\ServerLifecycle\Services\Status\FreshWingsServerStatusService;
 use HarbourmasterSam\ServerLifecycle\Storage\ArchiveStorageInterface;
 use RuntimeException;
 use Throwable;
@@ -21,6 +23,7 @@ class CompleteArchiveService
         private ServerDeletionService $deletion,
         private ArchiveEligibilityService $eligibility,
         private ArchiveFailureService $failures,
+        private FreshWingsServerStatusService $statuses,
     ) {}
 
     public function handle(ServerArchive $archive, Backup $backup): void
@@ -35,6 +38,7 @@ class CompleteArchiveService
             [$server, $state] = $this->revalidateAttempt($archive, $backup);
             $policy = LifecyclePolicy::query()->findOrFail(data_get($archive->policy_snapshot, 'policy_id'));
             $this->eligibility->assertEligible($server, $policy->load('archiveBackupHost'));
+            $this->assertFreshOffline($server);
 
             // Re-read after the Wings call so activity occurring during status
             // retrieval also invalidates the destructive continuation.
@@ -43,6 +47,16 @@ class CompleteArchiveService
                 || $state->current_archive_id !== $archive->id
                 || $state->last_activity_at->gt($archive->activity_snapshot_at)) {
                 throw new RuntimeException('Archive attempt was invalidated by newer server activity.');
+            }
+            // No existing Pelican conflict state accurately represents lifecycle
+            // finalization. A second uncached read immediately before adoption
+            // narrows the final status-to-delete window without misusing core state.
+            $this->assertFreshOffline($server);
+            $state->refresh();
+            if ($state->status !== LifecycleStatus::Archiving
+                || $state->current_archive_id !== $archive->id
+                || $state->last_activity_at->gt($archive->activity_snapshot_at)) {
+                throw new RuntimeException('Archive attempt changed during final status validation.');
             }
         } catch (Throwable $exception) {
             $this->failures->failBeforeAdoption(
@@ -79,6 +93,13 @@ class CompleteArchiveService
             'retention_expires_at' => $retention === null ? null : now()->addMinutes((int) $retention),
             'last_error' => null,
         ]);
+    }
+
+    private function assertFreshOffline(Server $server): void
+    {
+        if ($this->statuses->get($server) !== AuthoritativeServerState::Offline) {
+            throw new RuntimeException('Fresh Wings status is not exactly Offline.');
+        }
     }
 
     private function assertCompletedBackup(Backup $backup): void

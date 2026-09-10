@@ -2,7 +2,6 @@
 
 namespace HarbourmasterSam\ServerLifecycle\Services\Archive;
 
-use App\Enums\ContainerStatus;
 use App\Models\Server;
 use HarbourmasterSam\ServerLifecycle\Models\LifecyclePolicy;
 use RuntimeException;
@@ -17,13 +16,6 @@ class ArchiveEligibilityService
         }
         if (! $server->isInstalled() || $server->isInConflictState() || $server->transfer()->exists()) {
             throw new RuntimeException(__('server-lifecycle::strings.errors.conflicting_state'));
-        }
-
-        // retrieveStatus throws if Wings cannot be contacted. Missing is deliberately
-        // rejected even though Pelican's isOffline() helper also accepts that state.
-        $status = $server->retrieveStatus();
-        if ($status !== ContainerStatus::Offline) {
-            throw new RuntimeException(__('server-lifecycle::strings.errors.must_be_offline'));
         }
 
         if ($policy->archiveBackupHost->schema !== 's3') {

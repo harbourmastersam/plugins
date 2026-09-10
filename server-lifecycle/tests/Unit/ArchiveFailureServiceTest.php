@@ -20,9 +20,9 @@ it('unlocks and natively deletes only the exact linked pre-adoption backup', fun
     (new TemporaryBackupCleanupService($deletion))->handle($archive, $backup);
 });
 
-it('does not unlock or delete a mismatched or adopted backup', function (?int $archiveBackupId): void {
+it('does not unlock or delete a mismatched or adopted backup', function (?int $archiveBackupId, LifecycleStatus $status): void {
     $archive = M::mock(ServerArchive::class)->makePartial();
-    $archive->forceFill(['id' => 'archive', 'backup_id' => $archiveBackupId, 'original_server_id' => 20, 'original_backup_uuid' => 'expected', 'status' => LifecycleStatus::ArchiveCancelled]);
+    $archive->forceFill(['id' => 'archive', 'backup_id' => $archiveBackupId, 'original_server_id' => 20, 'original_backup_uuid' => 'expected', 'status' => $status]);
     $backup = M::mock(Backup::class)->makePartial();
     $backup->forceFill(['id' => 11, 'server_id' => 20, 'uuid' => 'wrong']);
     $backup->exists = true;
@@ -31,4 +31,7 @@ it('does not unlock or delete a mismatched or adopted backup', function (?int $a
     $deletion->shouldNotReceive('handle');
 
     (new TemporaryBackupCleanupService($deletion))->handle($archive, $backup);
-})->with(['mismatch' => 10, 'adopted archive' => null]);
+})->with([
+    'mismatch' => [10, LifecycleStatus::ArchiveCancelled],
+    'adopted archive' => [10, LifecycleStatus::Archived],
+]);

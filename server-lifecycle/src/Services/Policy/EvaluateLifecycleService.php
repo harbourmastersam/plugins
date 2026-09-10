@@ -119,10 +119,15 @@ class EvaluateLifecycleService
             ->whereIn('status', [LifecycleStatus::Archived, LifecycleStatus::ArchiveSuperseded, LifecycleStatus::DeletionWarning, LifecycleStatus::Restored])
             ->whereNotNull('retention_expires_at')
             ->each(function (ServerArchive $archive) use ($now): void {
-                $policy = LifecyclePolicy::query()->with('warningRules')->find(data_get($archive->policy_snapshot, 'policy_id'));
-                foreach ($policy?->warningRules ?? [] as $rule) {
-                    if ($rule->phase !== WarningPhase::Delete
-                        || $now->lt($archive->retention_expires_at->subMinutes($rule->offset_minutes))
+                $rules = data_get($archive->policy_snapshot, 'delete_warning_rules');
+                if (! is_array($rules)) {
+                    $rules = LifecyclePolicy::query()->with('warningRules')
+                        ->find(data_get($archive->policy_snapshot, 'policy_id'))
+                        ?->warningRules?->where('phase', WarningPhase::Delete) ?? [];
+                }
+                foreach ($rules as $rule) {
+                    $offset = (int) data_get($rule, 'offset_minutes');
+                    if ($now->lt($archive->retention_expires_at->subMinutes($offset))
                         || $now->gte($archive->retention_expires_at)) {
                         continue;
                     }
@@ -134,12 +139,17 @@ class EvaluateLifecycleService
 
     private function createDeliveries($rule, string $subjectKey, Carbon $target, ?int $serverId = null, ?string $archiveId = null): void
     {
-        foreach (['database' => $rule->database_enabled, 'mail' => $rule->email_enabled] as $channel => $enabled) {
+        $ruleId = data_get($rule, 'id');
+        $ruleKey = data_get($rule, 'rule_key', $ruleId === null
+            ? 'snapshot:'.data_get($rule, 'offset_minutes')
+            : 'rule:'.$ruleId);
+        foreach (['database' => data_get($rule, 'database_enabled'), 'mail' => data_get($rule, 'email_enabled')] as $channel => $enabled) {
             if (! $enabled) {
                 continue;
             }
             LifecycleNotificationDelivery::query()->firstOrCreate([
-                'warning_rule_id' => $rule->id,
+                'warning_rule_id' => $ruleId,
+                'rule_key' => $ruleKey,
                 'server_id' => $serverId,
                 'archive_id' => $archiveId,
                 'subject_key' => $subjectKey,

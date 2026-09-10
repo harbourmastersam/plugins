@@ -97,7 +97,8 @@ return new class extends Migration
 
         Schema::create('lifecycle_notification_deliveries', function (Blueprint $table): void {
             $table->id();
-            $table->foreignId('warning_rule_id')->constrained('lifecycle_warning_rules')->cascadeOnDelete();
+            $table->foreignId('warning_rule_id')->nullable()->constrained('lifecycle_warning_rules')->nullOnDelete();
+            $table->string('rule_key');
             $table->unsignedInteger('server_id')->nullable();
             $table->uuid('archive_id')->nullable();
             $table->string('subject_key');
@@ -106,7 +107,7 @@ return new class extends Migration
             $table->timestamp('delivered_at')->nullable();
             $table->text('last_error')->nullable();
             $table->timestamps();
-            $table->unique(['warning_rule_id', 'subject_key', 'channel', 'target_at'], 'lifecycle_delivery_cycle_unique');
+            $table->unique(['rule_key', 'subject_key', 'channel', 'target_at'], 'lifecycle_delivery_cycle_unique');
         });
     }
 

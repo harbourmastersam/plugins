@@ -2,12 +2,13 @@
 
 namespace HarbourmasterSam\ServerLifecycle\Services\Restore;
 
-use App\Enums\ContainerStatus;
 use App\Models\Server;
 use App\Services\Servers\ServerCreationService;
 use App\Services\Servers\ServerDeletionService;
+use HarbourmasterSam\ServerLifecycle\Enums\AuthoritativeServerState;
 use HarbourmasterSam\ServerLifecycle\Enums\LifecycleStatus;
 use HarbourmasterSam\ServerLifecycle\Models\ServerArchive;
+use HarbourmasterSam\ServerLifecycle\Services\Status\FreshWingsServerStatusService;
 use HarbourmasterSam\ServerLifecycle\Storage\ArchiveStorageInterface;
 use Illuminate\Support\Facades\Cache;
 use RuntimeException;
@@ -23,6 +24,7 @@ class StartRestoreService
         private RestoreAllocationValidationService $allocationValidation,
         private ServerCreationPayloadService $payloads,
         private ContinueRestoreService $continueRestore,
+        private FreshWingsServerStatusService $statuses,
     ) {}
 
     public function handle(ServerArchive $archive, ?int $ownerId = null): Server
@@ -92,7 +94,7 @@ class StartRestoreService
         if ((int) $server->owner_id !== (int) $expectedOwner
             || (int) $server->egg_id !== (int) $manifest['egg_id']
             || $server->isInConflictState()
-            || $server->retrieveStatus() !== ContainerStatus::Offline) {
+            || $this->statuses->get($server) !== AuthoritativeServerState::Offline) {
             throw new RuntimeException('The existing failed restore server is not safe to reuse; administrator recovery is required.');
         }
     }

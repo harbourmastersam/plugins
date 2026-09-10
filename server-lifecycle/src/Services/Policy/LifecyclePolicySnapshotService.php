@@ -2,6 +2,7 @@
 
 namespace HarbourmasterSam\ServerLifecycle\Services\Policy;
 
+use HarbourmasterSam\ServerLifecycle\Enums\WarningPhase;
 use HarbourmasterSam\ServerLifecycle\Models\LifecyclePolicy;
 
 final class LifecyclePolicySnapshotService
@@ -12,10 +13,12 @@ final class LifecyclePolicySnapshotService
      * Never use Model::toArray() here: a caller may have loaded the BackupHost
      * relation, whose encrypted configuration contains storage credentials.
      *
-     * @return array<string, bool|int|string|null>
+     * @return array<string, mixed>
      */
     public function build(LifecyclePolicy $policy): array
     {
+        $policy->loadMissing('warningRules');
+
         return [
             'policy_id' => $policy->id,
             'policy_name' => $policy->name,
@@ -25,6 +28,14 @@ final class LifecyclePolicySnapshotService
             'final_delivery_mode' => $policy->final_delivery_mode->value,
             'final_delivery_grace_minutes' => $policy->final_delivery_grace_minutes,
             'attachment_max_bytes' => $policy->attachment_max_bytes,
+            'delete_warning_rules' => $policy->warningRules
+                ->where('phase', WarningPhase::Delete)
+                ->map(fn ($rule): array => [
+                    'rule_key' => "delete:{$rule->offset_minutes}",
+                    'offset_minutes' => (int) $rule->offset_minutes,
+                    'database_enabled' => (bool) $rule->database_enabled,
+                    'email_enabled' => (bool) $rule->email_enabled,
+                ])->values()->all(),
         ];
     }
 }

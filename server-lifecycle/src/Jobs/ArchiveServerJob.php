@@ -2,12 +2,13 @@
 
 namespace HarbourmasterSam\ServerLifecycle\Jobs;
 
-use App\Enums\ContainerStatus;
 use App\Models\Server;
+use HarbourmasterSam\ServerLifecycle\Enums\AuthoritativeServerState;
 use HarbourmasterSam\ServerLifecycle\Enums\LifecycleStatus;
 use HarbourmasterSam\ServerLifecycle\Models\ServerLifecycleState;
 use HarbourmasterSam\ServerLifecycle\Services\Archive\StartArchiveService;
 use HarbourmasterSam\ServerLifecycle\Services\Policy\PolicyResolver;
+use HarbourmasterSam\ServerLifecycle\Services\Status\FreshWingsServerStatusService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -28,7 +29,7 @@ class ArchiveServerJob implements ShouldBeUnique, ShouldQueue
         return (string) $this->serverId;
     }
 
-    public function handle(StartArchiveService $archive, PolicyResolver $policies): void
+    public function handle(StartArchiveService $archive, PolicyResolver $policies, FreshWingsServerStatusService $statuses): void
     {
         $server = Server::query()->findOrFail($this->serverId);
         $state = ServerLifecycleState::query()->where('server_id', $server->id)->firstOrFail();
@@ -46,15 +47,16 @@ class ArchiveServerJob implements ShouldBeUnique, ShouldQueue
 
         // Poll only an automatically due server. A transport exception leaves
         // activity untouched and fails closed; Missing is likewise not activity.
-        $status = $server->retrieveStatus();
-        if ($status === ContainerStatus::Missing) {
+        try {
+            $status = $statuses->get($server);
+        } catch (\Throwable) {
             return;
         }
-        if ($status !== ContainerStatus::Offline) {
+        if ($status === AuthoritativeServerState::Active) {
             $observedAt = now();
             $state->update([
                 'last_activity_at' => $observedAt,
-                'last_activity_event' => 'server:lifecycle.observed-running',
+                'last_activity_event' => 'server:lifecycle.observed-active',
                 'archive_due_at' => $policy->inactivity_minutes === null
                     ? null
                     : $observedAt->copy()->addMinutes($policy->inactivity_minutes),
@@ -62,6 +64,7 @@ class ArchiveServerJob implements ShouldBeUnique, ShouldQueue
             ]);
             return;
         }
+        if ($status !== AuthoritativeServerState::Offline) return;
 
         $archive->handle($server, $policy);
     }
