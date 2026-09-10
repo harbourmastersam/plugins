@@ -33,6 +33,7 @@ class ServerCreationPayloadService
             'database_limit' => $manifest['database_limit'],
             'allocation_limit' => $manifest['allocation_limit'],
             'backup_limit' => $manifest['backup_limit'],
+            'docker_labels' => $manifest['docker_labels'] ?? null,
             'node_id' => $plan->nodeId,
             'allocation_id' => $plan->primaryAllocationId,
             'allocation_additional' => $plan->additionalAllocationIds,

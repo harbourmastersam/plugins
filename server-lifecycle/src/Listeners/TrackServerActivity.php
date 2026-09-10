@@ -41,9 +41,18 @@ class TrackServerActivity
             }
 
             if (in_array($state->status, [LifecycleStatus::Archiving, LifecycleStatus::ArchiveCreatedDeleteFailed], true) && $state->current_archive_id) {
-                ServerArchive::query()->whereKey($state->current_archive_id)->update([
-                    'status' => LifecycleStatus::ArchiveCancelled,
-                    'last_error' => 'Archive cancelled because meaningful activity occurred after it started.',
+                $archive = ServerArchive::query()->find($state->current_archive_id);
+                $superseded = $state->status === LifecycleStatus::ArchiveCreatedDeleteFailed;
+                $retention = $archive ? data_get($archive->policy_snapshot, 'archive_retention_minutes') : null;
+                $archive?->update([
+                    'status' => $superseded ? LifecycleStatus::ArchiveSuperseded : LifecycleStatus::ArchiveCancelled,
+                    'archived_at' => $superseded ? ($archive->archived_at ?? now()) : $archive->archived_at,
+                    'retention_expires_at' => $superseded && ! $archive->retention_expires_at && $retention !== null
+                        ? now()->addMinutes((int) $retention)
+                        : $archive->retention_expires_at,
+                    'last_error' => $superseded
+                        ? 'Adopted archive retained as historical because the live server became active.'
+                        : 'Archive cancelled because meaningful activity occurred after it started.',
                 ]);
             }
 

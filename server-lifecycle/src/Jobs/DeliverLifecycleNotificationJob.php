@@ -9,21 +9,36 @@ use HarbourmasterSam\ServerLifecycle\Models\LifecycleNotificationDelivery;
 use HarbourmasterSam\ServerLifecycle\Models\ServerArchive;
 use HarbourmasterSam\ServerLifecycle\Notifications\LifecycleWarningNotification;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Throwable;
 
-class DeliverLifecycleNotificationJob implements ShouldQueue
+class DeliverLifecycleNotificationJob implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 5;
 
+    public int $uniqueFor = 600;
+
     public function __construct(public int $deliveryId) {}
 
+    public function uniqueId(): string
+    {
+        return (string) $this->deliveryId;
+    }
+
     public function handle(): void
+    {
+        Cache::lock("server-lifecycle:notification:$this->deliveryId", 600)
+            ->block(5, fn () => $this->deliverWhileLocked());
+    }
+
+    private function deliverWhileLocked(): void
     {
         $delivery = LifecycleNotificationDelivery::query()->findOrFail($this->deliveryId);
         if ($delivery->delivered_at) {

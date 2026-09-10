@@ -51,7 +51,7 @@ class ServerArchiveResource extends Resource
                 ->label('Delete Permanently')
                 ->color('danger')
                 ->visible(fn (ServerArchive $record): bool => (bool) config('server-lifecycle.users_may_delete')
-                    && in_array($record->status, [LifecycleStatus::Archived, LifecycleStatus::DeletionWarning, LifecycleStatus::Restored, LifecycleStatus::RestoreFailed, LifecycleStatus::PendingDeletion, LifecycleStatus::DeleteFailed], true))
+                    && in_array($record->status, [LifecycleStatus::Archived, LifecycleStatus::ArchiveSuperseded, LifecycleStatus::DeletionWarning, LifecycleStatus::Restored, LifecycleStatus::RestoreFailed, LifecycleStatus::PendingDeletion, LifecycleStatus::DeleteFailed], true))
                 ->requiresConfirmation()
                 ->modalDescription('This deletes the archive permanently and cannot be undone. Download it before continuing if you need a copy.')
                 ->action(function (ServerArchive $record, PermanentDeleteArchiveService $service): void {

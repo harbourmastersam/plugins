@@ -19,4 +19,5 @@ enum LifecycleStatus: string
     case Deleted = 'deleted';
     case ArchiveFailed = 'archive_failed';
     case ArchiveCancelled = 'archive_cancelled';
+    case ArchiveSuperseded = 'archive_superseded';
 }

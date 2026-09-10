@@ -34,7 +34,7 @@ class StartRestoreService
     private function startWhileLocked(ServerArchive $archive, ?int $ownerId): Server
     {
         $archive->refresh();
-        if (! in_array($archive->status, [LifecycleStatus::Archived, LifecycleStatus::RestoreFailed], true)) {
+        if (! in_array($archive->status, [LifecycleStatus::Archived, LifecycleStatus::ArchiveSuperseded, LifecycleStatus::RestoreFailed], true)) {
             throw new RuntimeException('Archive cannot currently be restored.');
         }
         if (! $archive->object_key || ! $this->storage->exists($archive)) {

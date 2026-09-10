@@ -19,6 +19,8 @@ use Illuminate\Support\Carbon;
 
 class EvaluateLifecycleService
 {
+    public function __construct(private PolicyResolver $policies) {}
+
     public function handle(): void
     {
         $now = now();
@@ -43,8 +45,7 @@ class EvaluateLifecycleService
             ->where('exempt_until', '<=', $now)
             ->each(function (ServerLifecycleState $state): void {
                 $reference = $state->exempt_until;
-                $policy = $state->policy
-                    ?: LifecyclePolicy::query()->where('enabled', true)->where('is_default', true)->first();
+                $policy = $this->policies->resolve($state);
                 $state->update([
                     'exempt_until' => null,
                     'last_activity_at' => $reference,
@@ -92,14 +93,15 @@ class EvaluateLifecycleService
     private function queueArchiveWarnings(Carbon $now): void
     {
         ServerLifecycleState::query()
-            ->with('policy.warningRules')
+            ->with('policy')
             ->where('automatic_enabled', true)
             ->where('is_exempt', false)
             ->where(fn ($query) => $query->whereNull('exempt_until')->orWhere('exempt_until', '<=', $now))
             ->whereIn('status', [LifecycleStatus::Active, LifecycleStatus::Warning])
             ->whereNotNull('archive_due_at')
             ->each(function (ServerLifecycleState $state) use ($now): void {
-                foreach ($state->policy?->warningRules ?? [] as $rule) {
+                $policy = $this->policies->resolve($state)?->loadMissing('warningRules');
+                foreach ($policy?->warningRules ?? [] as $rule) {
                     if ($rule->phase !== WarningPhase::Archive
                         || $now->lt($state->archive_due_at->subMinutes($rule->offset_minutes))
                         || $now->gte($state->archive_due_at)) {
@@ -114,7 +116,7 @@ class EvaluateLifecycleService
     private function queueDeletionWarnings(Carbon $now): void
     {
         ServerArchive::query()
-            ->whereIn('status', [LifecycleStatus::Archived, LifecycleStatus::DeletionWarning, LifecycleStatus::Restored])
+            ->whereIn('status', [LifecycleStatus::Archived, LifecycleStatus::ArchiveSuperseded, LifecycleStatus::DeletionWarning, LifecycleStatus::Restored])
             ->whereNotNull('retention_expires_at')
             ->each(function (ServerArchive $archive) use ($now): void {
                 $policy = LifecyclePolicy::query()->with('warningRules')->find(data_get($archive->policy_snapshot, 'policy_id'));
@@ -150,7 +152,7 @@ class EvaluateLifecycleService
     private function beginPendingDeletion(Carbon $now): void
     {
         ServerArchive::query()
-            ->whereIn('status', [LifecycleStatus::Archived, LifecycleStatus::DeletionWarning, LifecycleStatus::Restored])
+            ->whereIn('status', [LifecycleStatus::Archived, LifecycleStatus::ArchiveSuperseded, LifecycleStatus::DeletionWarning, LifecycleStatus::Restored])
             ->whereNotNull('retention_expires_at')
             ->where('retention_expires_at', '<=', $now)
             ->each(function (ServerArchive $archive) use ($now): void {
@@ -178,6 +180,7 @@ class EvaluateLifecycleService
             ->whereIn('status', [LifecycleStatus::PendingDeletion, LifecycleStatus::DeleteFailed])
             ->whereNotNull('final_delivery_sent_at')
             ->where('final_delivery_expires_at', '<=', $now)
+            ->where(fn ($query) => $query->whereNull('retry_after')->orWhere('retry_after', '<=', $now))
             ->get()
             ->filter(function (ServerArchive $archive): bool {
                 $mode = FinalDeliveryMode::from(data_get($archive->policy_snapshot, 'final_delivery_mode', 'none'));

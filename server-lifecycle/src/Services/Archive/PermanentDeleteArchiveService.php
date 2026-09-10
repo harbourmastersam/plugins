@@ -26,7 +26,7 @@ class PermanentDeleteArchiveService
         Cache::lock("server-lifecycle:delete:$archive->id", 300)->block(5, function () use ($archive, $manualOverride, $reason): void {
             $archive->refresh();
             $allowed = $manualOverride
-                ? [LifecycleStatus::Archived, LifecycleStatus::DeletionWarning, LifecycleStatus::Restored, LifecycleStatus::RestoreFailed, LifecycleStatus::PendingDeletion, LifecycleStatus::DeleteFailed]
+                ? [LifecycleStatus::Archived, LifecycleStatus::ArchiveSuperseded, LifecycleStatus::DeletionWarning, LifecycleStatus::Restored, LifecycleStatus::RestoreFailed, LifecycleStatus::PendingDeletion, LifecycleStatus::DeleteFailed]
                 : [LifecycleStatus::PendingDeletion, LifecycleStatus::DeleteFailed];
             if (! in_array($archive->status, $allowed, true)) {
                 throw new RuntimeException('Archive cannot be permanently deleted in its current lifecycle state.');

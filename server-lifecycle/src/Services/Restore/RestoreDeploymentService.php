@@ -25,7 +25,7 @@ class RestoreDeploymentService
             throw new RuntimeException('The archive does not identify its original primary allocation.');
         }
 
-        foreach ($this->candidateNodeIds($archive, $requested->count()) as $nodeId) {
+        foreach ($this->candidateNodeIds($archive, $manifest, $requested->count()) as $nodeId) {
             $selected = $this->selectOnNode($nodeId, $requested);
             if ($selected === null) {
                 continue;
@@ -38,22 +38,34 @@ class RestoreDeploymentService
     }
 
     /** @return Collection<int, int> */
-    private function candidateNodeIds(ServerArchive $archive, int $required): Collection
+    private function candidateNodeIds(ServerArchive $archive, array $manifest, int $required): Collection
     {
         $originalNodeId = (int) data_get($archive->original_node, 'id');
-        $eligibleNodes = Node::query()
+        $nodes = Node::query()
             ->where('maintenance_mode', false)
+            ->get()
+            ->filter(fn (Node $node): bool => $node->isViable(
+                (int) $manifest['memory'],
+                (int) $manifest['disk'],
+                (int) $manifest['cpu'],
+            ));
+
+        $original = $nodes->firstWhere('id', $originalNodeId);
+        $fallbackIds = $nodes
+            ->where('public', true)
+            ->where('id', '!=', $originalNodeId)
             ->pluck('id');
+        $eligibleNodeIds = collect($original ? [$original->id] : [])->concat($fallbackIds);
         $available = Allocation::query()
             ->whereNull('server_id')
-            ->whereIn('node_id', $eligibleNodes)
+            ->whereIn('node_id', $eligibleNodeIds)
             ->selectRaw('node_id, COUNT(*) AS allocation_count')
             ->groupBy('node_id')
             ->having('allocation_count', '>=', $required)
             ->pluck('node_id');
 
-        return $available
-            ->sortByDesc(fn ($nodeId): bool => (int) $nodeId === $originalNodeId)
+        return $eligibleNodeIds
+            ->filter(fn ($nodeId): bool => $available->contains($nodeId))
             ->map(fn ($nodeId): int => (int) $nodeId)
             ->values();
     }

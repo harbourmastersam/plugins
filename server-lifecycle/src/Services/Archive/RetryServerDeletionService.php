@@ -84,6 +84,7 @@ class RetryServerDeletionService
     {
         $policy = $state->policy
             ?: LifecyclePolicy::query()->where('enabled', true)->where('is_default', true)->first();
+        $retention = data_get($archive->policy_snapshot, 'archive_retention_minutes');
         $state->update([
             'status' => LifecycleStatus::Active,
             'current_archive_id' => null,
@@ -93,7 +94,10 @@ class RetryServerDeletionService
             'last_error' => null,
         ]);
         $archive->update([
-            'status' => LifecycleStatus::ArchiveCancelled,
+            'status' => LifecycleStatus::ArchiveSuperseded,
+            'archived_at' => $archive->archived_at ?? now(),
+            'retention_expires_at' => $archive->retention_expires_at
+                ?? ($retention === null ? null : now()->addMinutes((int) $retention)),
             'retry_after' => null,
             'last_error' => 'Adopted archive no longer authorizes deletion because the live server became active.',
         ]);

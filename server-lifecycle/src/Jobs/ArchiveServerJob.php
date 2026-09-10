@@ -35,6 +35,7 @@ class ArchiveServerJob implements ShouldBeUnique, ShouldQueue
 
         if (! config('server-lifecycle.enabled')
             || ! $state->automatic_enabled
+            || $state->is_exempt
             || ! $policy
             || ! in_array($state->status, [LifecycleStatus::Active, LifecycleStatus::Warning], true)
             || ! $state->archive_due_at?->isPast()
