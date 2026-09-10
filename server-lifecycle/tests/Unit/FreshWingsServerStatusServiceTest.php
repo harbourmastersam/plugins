@@ -1,0 +1,123 @@
+<?php
+
+use App\Models\Node;
+use App\Models\Server;
+use App\Repositories\Daemon\DaemonServerRepository;
+use HarbourmasterSam\ServerLifecycle\Enums\AuthoritativeServerState;
+use HarbourmasterSam\ServerLifecycle\Services\Status\FreshWingsServerStatusService;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Http;
+
+function statusService(): FreshWingsServerStatusService
+{
+    return new FreshWingsServerStatusService(app(DaemonServerRepository::class));
+}
+
+function statusServer(): Server
+{
+    $node = new Node();
+    $node->forceFill([
+        'fqdn' => 'wings.test',
+        'scheme' => 'https',
+        'daemon_listen' => 8080,
+        'daemon_token' => 'test-token',
+        'daemon_token_id' => 'test-token-id',
+    ]);
+    $server = new Server();
+    $server->forceFill(['uuid' => '00000000-0000-0000-0000-000000000001']);
+    $server->setRelation('node', $node);
+
+    return $server;
+}
+
+it('classifies fresh Wings responses without treating errors as missing', function (int $status, array $body, ?AuthoritativeServerState $expected): void {
+    Http::fake(['*' => Http::response($body, $status, [
+        'User-Agent' => 'Pelican Wings/v1.0.0 (id:test-token-id)',
+    ])]);
+    $call = fn () => statusService()->get(statusServer());
+
+    $expected === null
+        ? expect($call)->toThrow(RuntimeException::class)
+        : expect($call())->toBe($expected);
+})->with([
+    'offline' => [200, ['state' => 'offline'], AuthoritativeServerState::Offline],
+    'running' => [200, ['state' => 'running'], AuthoritativeServerState::Active],
+    'starting' => [200, ['state' => 'starting'], AuthoritativeServerState::Active],
+    'dead unsafe' => [200, ['state' => 'dead'], AuthoritativeServerState::InactiveUnsafe],
+    'exited unsafe' => [200, ['state' => 'exited'], AuthoritativeServerState::InactiveUnsafe],
+    'confirmed 404' => [404, [], AuthoritativeServerState::ConfirmedMissing],
+    'unauthorized' => [401, [], null],
+    'forbidden' => [403, [], null],
+    'server error' => [500, [], null],
+    'bad gateway' => [502, [], null],
+    'missing state' => [200, [], null],
+    'unknown state' => [200, ['state' => 'mystery'], null],
+]);
+
+it('performs a new Wings request for every status read', function (): void {
+    $headers = ['User-Agent' => 'Pelican Wings/v1.0.0 (id:test-token-id)'];
+    Http::fakeSequence()
+        ->push(['state' => 'offline'], 200, $headers)
+        ->push(['state' => 'running'], 200, $headers);
+    $service = statusService();
+    $server = statusServer();
+
+    expect($service->get($server))->toBe(AuthoritativeServerState::Offline)
+        ->and($service->get($server))->toBe(AuthoritativeServerState::Active);
+    Http::assertSentCount(2);
+});
+
+it('never converts a transport failure into confirmed missing', function (): void {
+    Http::fake(['*' => fn () => throw new ConnectionException('connection refused')]);
+
+    expect(fn () => statusService()->get(statusServer()))
+        ->toThrow(RuntimeException::class, 'could not be contacted');
+});
+
+it('rejects an intermediary 404 without the expected Wings token identity', function (): void {
+    Http::fake(['*' => Http::response([], 404, ['User-Agent' => 'cloud-proxy'])]);
+
+    expect(fn () => statusService()->get(statusServer()))->toThrow(Throwable::class);
+});
+
+it('rejects a Wings 404 from a different node token', function (): void {
+    Http::fake(['*' => Http::response([], 404, [
+        'User-Agent' => 'Pelican Wings/v1.0.0 (id:different-node-id)',
+    ])]);
+
+    expect(fn () => statusService()->get(statusServer()))->toThrow(Throwable::class);
+});
+
+it('rejects a 404 with no Wings identity', function (): void {
+    Http::fake(['*' => Http::response([], 404)]);
+
+    expect(fn () => statusService()->get(statusServer()))->toThrow(Throwable::class);
+});
+
+it('accepts a validated Wings 404 as confirmed missing', function (): void {
+    Http::fake(['*' => Http::response([], 404, [
+        'User-Agent' => 'Pelican Wings/v1.0.0 (id:test-token-id)',
+    ])]);
+
+    expect(statusService()->get(statusServer()))->toBe(AuthoritativeServerState::ConfirmedMissing);
+});
+
+it('accepts the Wings develop identity format', function (): void {
+    Http::fake(['*' => Http::response(['state' => 'offline'], 200, [
+        'User-Agent' => 'Pelican Wings/vdevelop (id:test-token-id)',
+    ])]);
+
+    expect(statusService()->get(statusServer()))->toBe(AuthoritativeServerState::Offline);
+});
+
+it('rejects successful status responses from an untrusted origin', function (?string $userAgent): void {
+    $headers = $userAgent === null ? [] : ['User-Agent' => $userAgent];
+    Http::fake(['*' => Http::response(['state' => 'offline'], 200, $headers)]);
+
+    expect(fn () => statusService()->get(statusServer()))->toThrow(RuntimeException::class);
+})->with([
+    'generic proxy' => 'nginx',
+    'wrong node' => 'Pelican Wings/v1.0.0 (id:other-node)',
+    'missing identity' => null,
+    'missing v prefix' => 'Pelican Wings/1.0.0 (id:test-token-id)',
+]);
