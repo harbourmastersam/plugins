@@ -16,7 +16,16 @@ class ContinueRestoreService
     public function __construct(private ArchiveStorageInterface $storage, private DaemonBackupRepository $daemon) {}
     public function handle(ServerArchive $archive, Server $server): void
     {
-        $backup = Backup::query()->create(['server_id' => $server->id, 'backup_host_id' => $archive->backup_host_id, 'uuid' => Str::uuid()->toString(), 'name' => 'Server Lifecycle restore bookkeeping', 'disk' => 's3', 'is_locked' => true, 'is_successful' => false]);
+        $backup = Backup::query()->create([
+            'server_id' => $server->id,
+            'backup_host_id' => $archive->backup_host_id,
+            'uuid' => Str::uuid()->toString(),
+            'name' => 'Server Lifecycle restore bookkeeping',
+            'ignored_files' => [],
+            'is_locked' => true,
+            'is_scheduled' => true,
+            'is_successful' => false,
+        ]);
         $archive->update(['restore_backup_id' => $backup->id]);
         $server->update(['status' => ServerState::RestoringBackup]);
         try {

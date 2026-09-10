@@ -38,8 +38,14 @@ class DeliverFinalArchiveJob implements ShouldBeUnique, ShouldQueue
         }
 
         $mode = FinalDeliveryMode::from(data_get($archive->policy_snapshot, 'final_delivery_mode', 'none'));
+        $grace = (int) data_get($archive->policy_snapshot, 'final_delivery_grace_minutes', 0);
+        $expiresAt = now()->addMinutes($grace);
         if ($mode === FinalDeliveryMode::None) {
-            $archive->update(['final_delivery_sent_at' => now(), 'last_error' => null]);
+            $archive->update([
+                'final_delivery_sent_at' => now(),
+                'final_delivery_expires_at' => $expiresAt,
+                'last_error' => null,
+            ]);
 
             return;
         }
@@ -53,7 +59,7 @@ class DeliverFinalArchiveJob implements ShouldBeUnique, ShouldQueue
             && $archive->bytes <= $limit;
         $link = in_array($mode, [FinalDeliveryMode::DownloadLink, FinalDeliveryMode::AttachmentIfSmallElseLink], true)
             || ($mode === FinalDeliveryMode::AttachmentIfSmall && ! $attach);
-        $url = $link ? URL::temporarySignedRoute('server-lifecycle.archives.final-download', $archive->final_delivery_expires_at, ['archive' => $archive->id]) : null;
+        $url = $link ? URL::temporarySignedRoute('server-lifecycle.archives.final-download', $expiresAt, ['archive' => $archive->id]) : null;
         $path = null;
 
         try {
@@ -65,9 +71,17 @@ class DeliverFinalArchiveJob implements ShouldBeUnique, ShouldQueue
                 $storage->downloadToPath($archive, $path);
             }
             $archive->owner->notifyNow(new FinalArchiveDeliveryNotification($archive, $url, $path));
-            $archive->update(['final_delivery_sent_at' => now(), 'last_error' => null]);
+            $archive->update([
+                'final_delivery_sent_at' => now(),
+                'final_delivery_expires_at' => $expiresAt,
+                'last_error' => null,
+            ]);
         } catch (Throwable $exception) {
-            $archive->update(['last_error' => 'Final archive delivery failed and will be retried.']);
+            $archive->update([
+                'final_delivery_sent_at' => null,
+                'final_delivery_expires_at' => null,
+                'last_error' => 'Final archive delivery failed and will be retried.',
+            ]);
             report($exception);
             throw $exception;
         } finally {

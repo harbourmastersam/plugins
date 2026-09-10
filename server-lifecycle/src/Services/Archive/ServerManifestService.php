@@ -19,7 +19,7 @@ class ServerManifestService
             'docker_labels' => $server->docker_labels,
             'environment' => $server->variables->mapWithKeys(fn ($variable) => [$variable->env_variable => $variable->server_value ?? $variable->default_value])->all(),
             'node_id' => $server->node_id, 'allocation_id' => $server->allocation_id,
-            'allocations' => $server->allocations->map(fn ($allocation) => ['id' => $allocation->id, 'ip' => $allocation->ip, 'port' => $allocation->port])->all(),
+            'allocations' => $server->allocations->map(fn ($allocation) => ['id' => $allocation->id, 'ip' => $allocation->ip, 'port' => $allocation->port, 'primary' => (int) $allocation->id === (int) $server->allocation_id])->all(),
         ];
     }
 }

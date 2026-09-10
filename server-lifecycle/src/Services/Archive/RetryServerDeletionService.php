@@ -33,7 +33,16 @@ class RetryServerDeletionService
                 $server = Server::query()->find($archive->original_server_id);
                 if ($server) {
                     $server->unsetRelation('backups')->refresh();
-                    $this->deletion->handle($server);
+                    try {
+                        $this->deletion->handle($server);
+                    } catch (\Throwable $exception) {
+                        $archive->update([
+                            'retry_count' => $archive->retry_count + 1,
+                            'retry_after' => now()->addMinutes(min(60, 2 ** min(6, $archive->retry_count))),
+                            'last_error' => 'Native server deletion retry failed; archive retained.',
+                        ]);
+                        throw $exception;
+                    }
                 }
 
                 $retention = data_get($archive->policy_snapshot, 'archive_retention_minutes');
@@ -43,6 +52,7 @@ class RetryServerDeletionService
                     'retention_expires_at' => $archive->retention_expires_at
                         ?? ($retention === null ? null : now()->addMinutes((int) $retention)),
                     'last_error' => null,
+                    'retry_after' => null,
                 ]);
             });
     }

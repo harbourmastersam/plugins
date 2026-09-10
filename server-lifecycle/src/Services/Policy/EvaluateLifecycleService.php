@@ -56,6 +56,7 @@ class EvaluateLifecycleService
     {
         ServerLifecycleState::query()
             ->where('automatic_enabled', true)
+            ->where('is_exempt', false)
             ->whereIn('status', [LifecycleStatus::Active, LifecycleStatus::Warning])
             ->whereNotNull('archive_due_at')
             ->where('archive_due_at', '<=', $now)
@@ -127,11 +128,11 @@ class EvaluateLifecycleService
             ->whereNotNull('retention_expires_at')
             ->where('retention_expires_at', '<=', $now)
             ->each(function (ServerArchive $archive) use ($now): void {
-                $grace = (int) data_get($archive->policy_snapshot, 'final_delivery_grace_minutes', 0);
                 $archive->update([
                     'status' => LifecycleStatus::PendingDeletion,
                     'pending_deletion_at' => $now,
-                    'final_delivery_expires_at' => $now->copy()->addMinutes($grace),
+                    'final_delivery_sent_at' => null,
+                    'final_delivery_expires_at' => null,
                 ]);
             });
     }
@@ -164,6 +165,7 @@ class EvaluateLifecycleService
     {
         ServerArchive::query()
             ->where('status', LifecycleStatus::ArchiveCreatedDeleteFailed)
+            ->where(fn ($query) => $query->whereNull('retry_after')->orWhere('retry_after', '<=', now()))
             ->pluck('id')
             ->each(fn (string $id) => RetryServerDeletionJob::dispatch($id));
     }

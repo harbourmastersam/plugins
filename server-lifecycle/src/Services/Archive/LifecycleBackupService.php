@@ -16,7 +16,11 @@ class LifecycleBackupService
     {
         $backup = Backup::query()->create([
             'server_id' => $server->id, 'backup_host_id' => $host->id, 'uuid' => Str::uuid()->toString(),
-            'name' => 'Server Lifecycle final archive', 'ignored_files' => [], 'disk' => 's3', 'is_locked' => true, 'is_successful' => false,
+            'name' => 'Server Lifecycle final archive',
+            'ignored_files' => [],
+            'is_locked' => true,
+            'is_scheduled' => true,
+            'is_successful' => false,
         ]);
         try {
             $this->adapters->get($host->schema)->createBackup($backup);

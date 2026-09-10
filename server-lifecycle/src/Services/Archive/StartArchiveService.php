@@ -56,6 +56,8 @@ class StartArchiveService
                 'original_allocations' => $manifest['allocations'],
                 'backup_host_id' => $policy->archive_backup_host_id,
                 'status' => LifecycleStatus::Archiving,
+                'archive_started_at' => now(),
+                'activity_snapshot_at' => $state->last_activity_at,
                 'manifest' => $manifest,
                 'policy_snapshot' => $this->snapshots->build($policy),
             ]);
@@ -80,11 +82,12 @@ class StartArchiveService
             return $archive;
         } catch (Throwable $exception) {
             $archive->update([
-                'status' => LifecycleStatus::Failed,
+                'status' => LifecycleStatus::ArchiveFailed,
                 'last_error' => 'Unable to initiate final backup; live server retained.',
             ]);
             $state->update([
-                'status' => LifecycleStatus::Failed,
+                'status' => LifecycleStatus::ArchiveFailed,
+                'current_archive_id' => null,
                 'last_error' => 'Unable to initiate final backup; live server retained.',
             ]);
 

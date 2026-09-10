@@ -41,17 +41,21 @@ class LifecyclePolicyResource extends Resource
                 ->options(fn () => BackupHost::query()->where('schema', 's3')->pluck('name', 'id'))
                 ->required()
                 ->searchable(),
-            TextInput::make('inactivity_minutes')->numeric()->minValue(1)->nullable()->suffix('minutes'),
+            TextInput::make('inactivity_value')->label('Archive after')->numeric()->minValue(1)->nullable(),
+            Select::make('inactivity_unit')->options(self::durationUnits())->default('days')->required(),
             Toggle::make('running_counts_as_active')->default(true),
-            TextInput::make('archive_retention_minutes')->numeric()->minValue(1)->nullable()->suffix('minutes'),
+            TextInput::make('retention_value')->label('Archive retention')->numeric()->minValue(1)->nullable(),
+            Select::make('retention_unit')->options(self::durationUnits())->default('days')->required(),
             Select::make('final_delivery_mode')->options(collect(FinalDeliveryMode::cases())->mapWithKeys(fn ($mode) => [$mode->value => str($mode->value)->headline()]))->required(),
-            TextInput::make('final_delivery_grace_minutes')->numeric()->minValue(1)->required()->suffix('minutes'),
+            TextInput::make('grace_value')->label('Final delivery grace')->numeric()->minValue(1)->required(),
+            Select::make('grace_unit')->options(self::durationUnits())->default('days')->required(),
             TextInput::make('attachment_max_bytes')->numeric()->minValue(1)->required()->suffix('bytes'),
             Repeater::make('warningRules')
                 ->relationship()
                 ->schema([
                     Select::make('phase')->options(collect(WarningPhase::cases())->mapWithKeys(fn ($phase) => [$phase->value => str($phase->value)->headline()]))->required(),
-                    TextInput::make('offset_minutes')->numeric()->minValue(1)->required()->suffix('minutes'),
+                    TextInput::make('offset_value')->label('Warn before')->numeric()->minValue(1)->required(),
+                    Select::make('offset_unit')->options(self::durationUnits())->default('days')->required(),
                     Toggle::make('database_enabled')->default(true),
                     Toggle::make('email_enabled'),
                     TextInput::make('sort')->numeric()->default(0),
@@ -70,6 +74,11 @@ class LifecyclePolicyResource extends Resource
             TextColumn::make('inactivity_minutes')->suffix(' min'),
             TextColumn::make('archive_retention_minutes')->suffix(' min'),
         ])->recordActions([EditAction::make(), DeleteAction::make()])->toolbarActions([CreateAction::make()]);
+    }
+
+    public static function durationUnits(): array
+    {
+        return ['minutes' => 'Minutes', 'hours' => 'Hours', 'days' => 'Days', 'weeks' => 'Weeks'];
     }
 
     public static function getPages(): array

@@ -30,9 +30,20 @@ class StartRestoreService
                     throw new RuntimeException('Archive object is unavailable.');
                 }
 
-                $plan = $this->deployments->plan($archive);
-                $payload = $this->payloads->build($archive, $plan, $ownerId);
-                $server = $this->creation->handle($payload, $plan->deployment);
+                try {
+                    $plan = $this->deployments->plan($archive);
+                    $payload = $this->payloads->build($archive, $plan, $ownerId);
+                    // ServerCreationService rechecks and locks these currently-free
+                    // allocation IDs. A planning race therefore fails provisioning
+                    // rather than taking an allocation from another server.
+                    $server = $this->creation->handle($payload, $plan->deployment);
+                } catch (\Throwable $exception) {
+                    $archive->update([
+                        'status' => LifecycleStatus::RestoreFailed,
+                        'last_error' => 'Restore provisioning failed; archive retained.',
+                    ]);
+                    throw $exception;
+                }
                 $archive->update([
                     'status' => LifecycleStatus::Restoring,
                     'restored_server_id' => $server->id,

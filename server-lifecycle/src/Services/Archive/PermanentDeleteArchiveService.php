@@ -2,6 +2,7 @@
 
 namespace HarbourmasterSam\ServerLifecycle\Services\Archive;
 
+use App\Models\User;
 use HarbourmasterSam\ServerLifecycle\Enums\LifecycleStatus;
 use HarbourmasterSam\ServerLifecycle\Models\ServerArchive;
 use HarbourmasterSam\ServerLifecycle\Storage\ArchiveStorageInterface;
@@ -11,14 +12,26 @@ use RuntimeException;
 class PermanentDeleteArchiveService
 {
     public function __construct(private ArchiveStorageInterface $storage) {}
-    public function handle(ServerArchive $archive): void
+
+    public function handleManual(ServerArchive $archive, User $actor): void
     {
-        Cache::lock("server-lifecycle:delete:$archive->id", 300)->block(5, function () use ($archive): void {
+        $isOwnerAllowed = config('server-lifecycle.users_may_delete')
+            && (int) $archive->owner_id === (int) $actor->id;
+        abort_unless($actor->root_admin || $isOwnerAllowed, 403);
+
+        $this->handle($archive, true, $actor->root_admin ? 'manual_admin' : 'manual_owner');
+    }
+    public function handle(ServerArchive $archive, bool $manualOverride = false, string $reason = 'retention_expired'): void
+    {
+        Cache::lock("server-lifecycle:delete:$archive->id", 300)->block(5, function () use ($archive, $manualOverride, $reason): void {
             $archive->refresh();
-            if (! in_array($archive->status, [LifecycleStatus::PendingDeletion, LifecycleStatus::DeleteFailed], true)) {
+            $allowed = $manualOverride
+                ? [LifecycleStatus::Archived, LifecycleStatus::Restored, LifecycleStatus::RestoreFailed, LifecycleStatus::PendingDeletion, LifecycleStatus::DeleteFailed]
+                : [LifecycleStatus::PendingDeletion, LifecycleStatus::DeleteFailed];
+            if (! in_array($archive->status, $allowed, true)) {
                 return;
             }
-            if (! $archive->final_delivery_sent_at) {
+            if (! $manualOverride && ! $archive->final_delivery_sent_at) {
                 throw new RuntimeException('Required final delivery has not succeeded; automatic deletion is refused.');
             }
 
@@ -37,6 +50,8 @@ class PermanentDeleteArchiveService
                 $archive->update([
                     'status' => LifecycleStatus::DeleteFailed,
                     'last_error' => 'Remote object deletion failed and remains retryable.',
+                    'retry_count' => $archive->retry_count + 1,
+                    'retry_after' => now()->addMinutes(min(60, 2 ** min(6, $archive->retry_count))),
                 ]);
                 throw $exception;
             }
@@ -44,7 +59,7 @@ class PermanentDeleteArchiveService
             $archive->update([
                 'status' => LifecycleStatus::Deleted,
                 'remote_object_deleted_at' => now(),
-                'deletion_reason' => 'retention_expired',
+                'deletion_reason' => $reason,
                 'manifest' => null,
                 'object_key' => null,
                 'checksum' => null,
@@ -53,6 +68,7 @@ class PermanentDeleteArchiveService
                 'policy_snapshot' => [],
                 'restore_backup_id' => null,
                 'last_error' => null,
+                'retry_after' => null,
             ]);
         });
     }

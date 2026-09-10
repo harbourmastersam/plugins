@@ -55,6 +55,8 @@ return new class extends Migration
             $table->unsignedBigInteger('bytes')->nullable();
             $table->string('checksum')->nullable();
             $table->string('status')->index();
+            $table->timestamp('archive_started_at')->nullable();
+            $table->timestamp('activity_snapshot_at')->nullable();
             $table->longText('manifest')->nullable();
             $table->json('policy_snapshot');
             $table->timestamp('archived_at')->nullable();
@@ -68,6 +70,8 @@ return new class extends Migration
             $table->timestamp('remote_object_deleted_at')->nullable();
             $table->string('deletion_reason')->nullable();
             $table->text('last_error')->nullable();
+            $table->unsignedInteger('retry_count')->default(0);
+            $table->timestamp('retry_after')->nullable();
             $table->timestamps();
             $table->foreign('owner_id')->references('id')->on('users')->nullOnDelete();
             $table->foreign('backup_host_id')->references('id')->on('backup_hosts')->restrictOnDelete();
@@ -78,6 +82,7 @@ return new class extends Migration
             $table->unsignedInteger('server_id')->unique();
             $table->foreignId('policy_id')->nullable()->constrained('lifecycle_policies')->nullOnDelete();
             $table->boolean('automatic_enabled')->default(false);
+            $table->boolean('is_exempt')->default(false);
             $table->timestamp('exempt_until')->nullable();
             $table->timestamp('last_activity_at');
             $table->string('last_activity_event')->nullable();

@@ -13,7 +13,6 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\URL;
 use Throwable;
 
 class DeliverLifecycleNotificationJob implements ShouldQueue
@@ -61,7 +60,7 @@ class DeliverLifecycleNotificationJob implements ShouldQueue
         if ($delivery->archive_id) {
             $archive = ServerArchive::query()->find($delivery->archive_id);
             $user = $archive?->owner;
-            $url = $archive ? URL::temporarySignedRoute('server-lifecycle.archives.final-download', $delivery->target_at, ['archive' => $archive->id]) : null;
+            $url = $archive ? route('server-lifecycle.archives.download', ['archive' => $archive->id]) : null;
 
             return [$user, __('server-lifecycle::strings.notifications.delete_title'), __('server-lifecycle::strings.notifications.delete_body', ['server' => $archive?->server_name, 'date' => $delivery->target_at]), $url];
         }

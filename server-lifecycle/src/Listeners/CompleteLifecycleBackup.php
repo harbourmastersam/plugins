@@ -13,7 +13,10 @@ class CompleteLifecycleBackup
     public function handle(BackupCompleted $event): void
     {
         $backup = $event->backup;
-        $archive = ServerArchive::query()->where('backup_id', $backup->id)->where('status', LifecycleStatus::Archiving)->first();
+        $archive = ServerArchive::query()
+            ->where('backup_id', $backup->id)
+            ->whereIn('status', [LifecycleStatus::Archiving, LifecycleStatus::ArchiveCancelled])
+            ->first();
         if (! $archive) return;
         try {
             $this->service->handle($archive, $backup);
@@ -21,9 +24,13 @@ class CompleteLifecycleBackup
             report($exception);
 
             $archive->refresh();
-            if ($archive->status !== LifecycleStatus::ArchiveCreatedDeleteFailed) {
+            if (! in_array($archive->status, [
+                LifecycleStatus::ArchiveCreatedDeleteFailed,
+                LifecycleStatus::ArchiveCancelled,
+                LifecycleStatus::ArchiveFailed,
+            ], true)) {
                 $archive->update([
-                    'status' => LifecycleStatus::Failed,
+                    'status' => LifecycleStatus::ArchiveFailed,
                     'last_error' => 'Archive verification failed; live server retained.',
                 ]);
             }

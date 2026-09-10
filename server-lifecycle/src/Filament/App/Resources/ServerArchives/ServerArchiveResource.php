@@ -8,6 +8,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use HarbourmasterSam\ServerLifecycle\Filament\App\Resources\ServerArchives\Pages\ListServerArchives;
 use HarbourmasterSam\ServerLifecycle\Models\ServerArchive;
+use HarbourmasterSam\ServerLifecycle\Services\Archive\PermanentDeleteArchiveService;
 use HarbourmasterSam\ServerLifecycle\Services\Restore\StartRestoreService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Number;
@@ -44,6 +45,16 @@ class ServerArchiveResource extends Resource
                 ->action(function (ServerArchive $record, StartRestoreService $service): void {
                     abort_unless((int) $record->owner_id === (int) auth()->id(), 403);
                     $service->handle($record);
+                }),
+            Action::make('delete_permanently')
+                ->label('Delete Permanently')
+                ->color('danger')
+                ->visible(fn (): bool => (bool) config('server-lifecycle.users_may_delete'))
+                ->requiresConfirmation()
+                ->modalDescription('This deletes the archive permanently and cannot be undone. Download it before continuing if you need a copy.')
+                ->action(function (ServerArchive $record, PermanentDeleteArchiveService $service): void {
+                    abort_unless((int) $record->owner_id === (int) auth()->id(), 403);
+                    $service->handleManual($record, auth()->user());
                 }),
         ]);
     }

@@ -12,13 +12,11 @@ use HarbourmasterSam\ServerLifecycle\Models\ServerLifecycleState;
 class CompleteLifecycleRestore
 {
     private const SUCCESS_EVENTS = [
-        'server:backup.restore.complete',
-        'server:backup.restore.completed',
+        'server:backup.restore-complete',
     ];
 
     private const FAILURE_EVENTS = [
-        'server:backup.restore.fail',
-        'server:backup.restore.failed',
+        'server.backup.restore-failed',
     ];
 
     public function handle(ActivityLogged $event): void
