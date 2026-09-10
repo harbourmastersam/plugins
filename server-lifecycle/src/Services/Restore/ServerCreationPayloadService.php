@@ -33,6 +33,7 @@ class ServerCreationPayloadService
             'database_limit' => $manifest['database_limit'],
             'allocation_limit' => $manifest['allocation_limit'],
             'backup_limit' => $manifest['backup_limit'],
+            'node_id' => $plan->nodeId,
             'allocation_id' => $plan->primaryAllocationId,
             'allocation_additional' => $plan->additionalAllocationIds,
             // Installation prepares Wings' server container. Starting is prohibited

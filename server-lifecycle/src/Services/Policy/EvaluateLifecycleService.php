@@ -23,6 +23,7 @@ class EvaluateLifecycleService
     {
         $now = now();
         $this->initializeMissingStates($now);
+        $this->restartExpiredExemptions($now);
         $this->queueArchiveWarnings($now);
         $this->queueDueArchives($now);
         $this->queueDeletionWarnings($now);
@@ -31,6 +32,29 @@ class EvaluateLifecycleService
         $this->queuePermanentDeletion($now);
         $this->reconcileRecoverableArchives();
         $this->queueUndeliveredNotifications();
+    }
+
+    private function restartExpiredExemptions(Carbon $now): void
+    {
+        ServerLifecycleState::query()
+            ->with('policy')
+            ->where('is_exempt', false)
+            ->whereNotNull('exempt_until')
+            ->where('exempt_until', '<=', $now)
+            ->each(function (ServerLifecycleState $state): void {
+                $reference = $state->exempt_until;
+                $policy = $state->policy
+                    ?: LifecyclePolicy::query()->where('enabled', true)->where('is_default', true)->first();
+                $state->update([
+                    'exempt_until' => null,
+                    'last_activity_at' => $reference,
+                    'last_activity_event' => 'server:lifecycle.exemption-expired',
+                    'archive_due_at' => $state->automatic_enabled && $policy?->inactivity_minutes !== null
+                        ? $reference->addMinutes($policy->inactivity_minutes)
+                        : null,
+                    'status' => LifecycleStatus::Active,
+                ]);
+            });
     }
 
     private function initializeMissingStates(Carbon $now): void
@@ -70,6 +94,8 @@ class EvaluateLifecycleService
         ServerLifecycleState::query()
             ->with('policy.warningRules')
             ->where('automatic_enabled', true)
+            ->where('is_exempt', false)
+            ->where(fn ($query) => $query->whereNull('exempt_until')->orWhere('exempt_until', '<=', $now))
             ->whereIn('status', [LifecycleStatus::Active, LifecycleStatus::Warning])
             ->whereNotNull('archive_due_at')
             ->each(function (ServerLifecycleState $state) use ($now): void {

@@ -40,7 +40,7 @@ class TrackServerActivity
                 ]);
             }
 
-            if ($state->status === LifecycleStatus::Archiving && $state->current_archive_id) {
+            if (in_array($state->status, [LifecycleStatus::Archiving, LifecycleStatus::ArchiveCreatedDeleteFailed], true) && $state->current_archive_id) {
                 ServerArchive::query()->whereKey($state->current_archive_id)->update([
                     'status' => LifecycleStatus::ArchiveCancelled,
                     'last_error' => 'Archive cancelled because meaningful activity occurred after it started.',

@@ -21,6 +21,7 @@ use HarbourmasterSam\ServerLifecycle\Filament\Admin\Resources\LifecyclePolicies\
 use HarbourmasterSam\ServerLifecycle\Filament\Admin\Resources\LifecyclePolicies\Pages\EditLifecyclePolicy;
 use HarbourmasterSam\ServerLifecycle\Filament\Admin\Resources\LifecyclePolicies\Pages\ListLifecyclePolicies;
 use HarbourmasterSam\ServerLifecycle\Models\LifecyclePolicy;
+use HarbourmasterSam\ServerLifecycle\Services\Policy\DurationNormalizer;
 
 class LifecyclePolicyResource extends Resource
 {
@@ -43,7 +44,6 @@ class LifecyclePolicyResource extends Resource
                 ->searchable(),
             TextInput::make('inactivity_value')->label('Archive after')->numeric()->minValue(1)->nullable(),
             Select::make('inactivity_unit')->options(self::durationUnits())->default('days')->required(),
-            Toggle::make('running_counts_as_active')->default(true),
             TextInput::make('retention_value')->label('Archive retention')->numeric()->minValue(1)->nullable(),
             Select::make('retention_unit')->options(self::durationUnits())->default('days')->required(),
             Select::make('final_delivery_mode')->options(collect(FinalDeliveryMode::cases())->mapWithKeys(fn ($mode) => [$mode->value => str($mode->value)->headline()]))->required(),
@@ -52,6 +52,15 @@ class LifecyclePolicyResource extends Resource
             TextInput::make('attachment_max_bytes')->numeric()->minValue(1)->required()->suffix('bytes'),
             Repeater::make('warningRules')
                 ->relationship()
+                ->mutateRelationshipDataBeforeFillUsing(function (array $data): array {
+                    $parts = app(DurationNormalizer::class)->fromMinutes($data['offset_minutes']);
+                    $data['offset_value'] = $parts['value'];
+                    $data['offset_unit'] = $parts['unit'];
+
+                    return $data;
+                })
+                ->mutateRelationshipDataBeforeCreateUsing(fn (array $data): array => self::normalizeWarningRule($data))
+                ->mutateRelationshipDataBeforeSaveUsing(fn (array $data): array => self::normalizeWarningRule($data))
                 ->schema([
                     Select::make('phase')->options(collect(WarningPhase::cases())->mapWithKeys(fn ($phase) => [$phase->value => str($phase->value)->headline()]))->required(),
                     TextInput::make('offset_value')->label('Warn before')->numeric()->minValue(1)->required(),
@@ -79,6 +88,15 @@ class LifecyclePolicyResource extends Resource
     public static function durationUnits(): array
     {
         return ['minutes' => 'Minutes', 'hours' => 'Hours', 'days' => 'Days', 'weeks' => 'Weeks'];
+    }
+
+    private static function normalizeWarningRule(array $data): array
+    {
+        $data['offset_minutes'] = app(DurationNormalizer::class)
+            ->toMinutes($data['offset_value'], $data['offset_unit']);
+        unset($data['offset_value'], $data['offset_unit']);
+
+        return $data;
     }
 
     public static function getPages(): array

@@ -4,7 +4,6 @@ namespace HarbourmasterSam\ServerLifecycle\Services\Restore;
 
 use App\Models\Allocation;
 use App\Models\Node;
-use App\Models\Objects\DeploymentObject;
 use HarbourmasterSam\ServerLifecycle\Models\ServerArchive;
 use Illuminate\Support\Collection;
 use RuntimeException;
@@ -105,12 +104,8 @@ class RestoreDeploymentService
             ];
         })->filter()->values()->all();
 
-        $deployment = new DeploymentObject();
-        $deployment->setDedicated(false);
-        $deployment->setPorts($selected->pluck('port')->map(fn ($port): string => (string) $port)->all());
-
         return new RestoreDeploymentPlan(
-            $deployment,
+            (int) $primary->node_id,
             $primary->id,
             $selected->skip(1)->pluck('id')->map(fn ($id): int => (int) $id)->all(),
             $changes,
