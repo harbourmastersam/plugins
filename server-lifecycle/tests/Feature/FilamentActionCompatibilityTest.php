@@ -7,6 +7,9 @@ use Filament\Tables\Table;
 use HarbourmasterSam\ServerLifecycle\Filament\Admin\Resources\LifecyclePolicies\Pages\CreateLifecyclePolicy;
 use HarbourmasterSam\ServerLifecycle\Filament\Admin\Resources\LifecyclePolicies\Pages\EditLifecyclePolicy;
 use HarbourmasterSam\ServerLifecycle\Filament\Admin\Resources\Servers\RelationManagers\LifecycleRelationManager;
+use HarbourmasterSam\ServerLifecycle\Filament\App\Resources\ServerArchives\Pages\ListServerArchives;
+use HarbourmasterSam\ServerLifecycle\Filament\App\Resources\ServerArchives\ServerArchiveResource;
+use HarbourmasterSam\ServerLifecycle\Models\ServerArchive;
 
 it('gives every lifecycle relation manager action an icon', function (): void {
     $server = Server::factory()->create();
@@ -99,4 +102,29 @@ function uiCompatibilityDurationFormData(): array
         'grace_value' => 30,
         'grace_unit' => 'minutes',
     ];
+}
+
+it('opens archive downloads through the authenticated panel route in a new tab', function (): void {
+    config()->set('server-lifecycle.users_may_download', true);
+
+    $archive = new ServerArchive(['id' => fake()->uuid()]);
+    $archive->id = fake()->uuid();
+    $action = serverArchiveResourceActions()['download'];
+    $action->record($archive);
+
+    expect($action->getName())->toBe('download')
+        ->and($action->getLabel())->toBe('Download')
+        ->and($action->getIcon())->toBe('tabler-download')
+        ->and($action->getUrl())->toBe(route('server-lifecycle.archives.download', $archive))
+        ->and($action->getActionFunction())->toBeNull()
+        ->and($action->shouldOpenUrlInNewTab())->toBeTrue();
+});
+
+/** @return \Illuminate\Support\Collection<string, Action> */
+function serverArchiveResourceActions(): \Illuminate\Support\Collection
+{
+    $page = new ListServerArchives();
+    $table = ServerArchiveResource::table(Table::make($page));
+
+    return collect($table->getRecordActions())->keyBy(fn (Action $action): string => $action->getName());
 }

@@ -6,9 +6,9 @@ use Filament\Actions\Action;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use HarbourmasterSam\ServerLifecycle\Enums\LifecycleStatus;
 use HarbourmasterSam\ServerLifecycle\Filament\App\Resources\ServerArchives\Pages\ListServerArchives;
 use HarbourmasterSam\ServerLifecycle\Models\ServerArchive;
-use HarbourmasterSam\ServerLifecycle\Enums\LifecycleStatus;
 use HarbourmasterSam\ServerLifecycle\Services\Archive\PermanentDeleteArchiveService;
 use HarbourmasterSam\ServerLifecycle\Services\Restore\StartRestoreService;
 use Illuminate\Database\Eloquent\Builder;
@@ -38,9 +38,11 @@ class ServerArchiveResource extends Resource
             TextColumn::make('original_allocations')->formatStateUsing(fn ($state) => collect($state)->pluck('port')->join(', '))->label('Preferred ports'),
         ])->recordActions([
             Action::make('download')
+                ->label('Download')
                 ->icon('tabler-download')
                 ->visible(fn () => config('server-lifecycle.users_may_download'))
-                ->url(fn (ServerArchive $record) => route('server-lifecycle.archives.download', $record)),
+                ->url(fn (ServerArchive $record) => route('server-lifecycle.archives.download', $record))
+                ->openUrlInNewTab(),
             Action::make('restore')
                 ->icon('tabler-restore')
                 ->visible(fn () => config('server-lifecycle.users_may_restore'))
@@ -58,7 +60,6 @@ class ServerArchiveResource extends Resource
                 ->requiresConfirmation()
                 ->modalDescription('This deletes the archive permanently and cannot be undone. Download it before continuing if you need a copy.')
                 ->action(function (ServerArchive $record, PermanentDeleteArchiveService $service): void {
-                    abort_unless((int) $record->owner_id === (int) auth()->id(), 403);
                     $service->handleManual($record, auth()->user());
                 }),
         ]);
