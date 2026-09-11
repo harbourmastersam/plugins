@@ -24,6 +24,6 @@ class ServerArchive extends Model
     public function backupHost(): BelongsTo { return $this->belongsTo(BackupHost::class); }
     public function scopeVisibleTo($query, User $user)
     {
-        return $user->root_admin ? $query : $query->where('owner_id', $user->id);
+        return $user->isRootAdmin() ? $query : $query->where('owner_id', $user->id);
     }
 }

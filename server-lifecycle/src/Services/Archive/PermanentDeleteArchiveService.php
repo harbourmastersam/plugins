@@ -15,12 +15,14 @@ class PermanentDeleteArchiveService
 
     public function handleManual(ServerArchive $archive, User $actor): void
     {
+        $isRootAdmin = $actor->isRootAdmin();
         $isOwnerAllowed = config('server-lifecycle.users_may_delete')
             && (int) $archive->owner_id === (int) $actor->id;
-        abort_unless($actor->root_admin || $isOwnerAllowed, 403);
+        abort_unless($isRootAdmin || $isOwnerAllowed, 403);
 
-        $this->handle($archive, true, $actor->root_admin ? 'manual_admin' : 'manual_owner');
+        $this->handle($archive, true, $isRootAdmin ? 'manual_admin' : 'manual_owner');
     }
+
     public function handle(ServerArchive $archive, bool $manualOverride = false, string $reason = 'retention_expired'): void
     {
         Cache::lock("server-lifecycle:delete:$archive->id", 300)->block(5, function () use ($archive, $manualOverride, $reason): void {

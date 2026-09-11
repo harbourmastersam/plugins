@@ -35,7 +35,11 @@ class ServerArchiveResource extends Resource
             TextColumn::make('retention_expires_at')->dateTime(),
             TextColumn::make('last_error')->wrap(),
         ])->recordActions([
-            Action::make('download')->icon('tabler-download')->url(fn (ServerArchive $record) => route('server-lifecycle.archives.download', $record)),
+            Action::make('download')
+                ->label('Download')
+                ->icon('tabler-download')
+                ->url(fn (ServerArchive $record) => route('server-lifecycle.archives.download', $record))
+                ->openUrlInNewTab(),
             Action::make('restore')->icon('tabler-restore')->requiresConfirmation()->action(fn (ServerArchive $record, StartRestoreService $service) => $service->handle($record)),
             Action::make('extend_retention')->icon('tabler-calendar-plus')->requiresConfirmation()->action(fn (ServerArchive $record) => $record->update(['retention_expires_at' => $record->retention_expires_at?->addMonth()])),
             Action::make('discard_failed_restore')
