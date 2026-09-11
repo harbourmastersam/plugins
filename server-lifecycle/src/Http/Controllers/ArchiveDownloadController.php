@@ -13,7 +13,7 @@ class ArchiveDownloadController
     public function __invoke(ServerArchive $archive, ArchiveStorageInterface $storage): RedirectResponse
     {
         $user = auth()->user();
-        abort_unless($user && ($user->root_admin || ((int) $archive->owner_id === (int) $user->id && config('server-lifecycle.users_may_download'))), 403);
+        abort_unless($user && ($user->isRootAdmin() || ((int) $archive->owner_id === (int) $user->id && config('server-lifecycle.users_may_download'))), 403);
         $downloadable = in_array($archive->status, [
             LifecycleStatus::Archived,
             LifecycleStatus::ArchiveSuperseded,

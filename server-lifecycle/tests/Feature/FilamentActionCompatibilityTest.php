@@ -7,6 +7,8 @@ use Filament\Tables\Table;
 use HarbourmasterSam\ServerLifecycle\Filament\Admin\Resources\LifecyclePolicies\Pages\CreateLifecyclePolicy;
 use HarbourmasterSam\ServerLifecycle\Filament\Admin\Resources\LifecyclePolicies\Pages\EditLifecyclePolicy;
 use HarbourmasterSam\ServerLifecycle\Filament\Admin\Resources\Servers\RelationManagers\LifecycleRelationManager;
+use HarbourmasterSam\ServerLifecycle\Filament\Admin\Resources\ServerArchives\Pages\ListServerArchives as AdminListServerArchives;
+use HarbourmasterSam\ServerLifecycle\Filament\Admin\Resources\ServerArchives\ServerArchiveResource as AdminServerArchiveResource;
 use HarbourmasterSam\ServerLifecycle\Filament\App\Resources\ServerArchives\Pages\ListServerArchives;
 use HarbourmasterSam\ServerLifecycle\Filament\App\Resources\ServerArchives\ServerArchiveResource;
 use HarbourmasterSam\ServerLifecycle\Models\ServerArchive;
@@ -104,7 +106,7 @@ function uiCompatibilityDurationFormData(): array
     ];
 }
 
-it('opens archive downloads through the authenticated panel route in a new tab', function (): void {
+it('opens client archive downloads through the authenticated panel route in a new tab', function (): void {
     config()->set('server-lifecycle.users_may_download', true);
 
     $archive = new ServerArchive(['id' => fake()->uuid()]);
@@ -120,11 +122,37 @@ it('opens archive downloads through the authenticated panel route in a new tab',
         ->and($action->shouldOpenUrlInNewTab())->toBeTrue();
 });
 
+it('renders admin archive downloads as normal new-tab links without SPA navigation', function (): void {
+    $archive = new ServerArchive(['id' => fake()->uuid()]);
+    $archive->id = fake()->uuid();
+    $action = adminServerArchiveResourceActions()['download'];
+    $action->record($archive);
+    $html = $action->toHtml();
+
+    expect($action->getName())->toBe('download')
+        ->and($action->getLabel())->toBe('Download')
+        ->and($action->getIcon())->toBe('tabler-download')
+        ->and($action->getUrl())->toBe(route('server-lifecycle.archives.download', $archive))
+        ->and($action->getActionFunction())->toBeNull()
+        ->and($action->shouldOpenUrlInNewTab())->toBeTrue()
+        ->and($html)->toContain('target="_blank"')
+        ->and($html)->not->toContain('wire:navigate');
+});
+
 /** @return \Illuminate\Support\Collection<string, Action> */
 function serverArchiveResourceActions(): \Illuminate\Support\Collection
 {
     $page = new ListServerArchives();
     $table = ServerArchiveResource::table(Table::make($page));
+
+    return collect($table->getRecordActions())->keyBy(fn (Action $action): string => $action->getName());
+}
+
+/** @return \Illuminate\Support\Collection<string, Action> */
+function adminServerArchiveResourceActions(): \Illuminate\Support\Collection
+{
+    $page = new AdminListServerArchives();
+    $table = AdminServerArchiveResource::table(Table::make($page));
 
     return collect($table->getRecordActions())->keyBy(fn (Action $action): string => $action->getName());
 }

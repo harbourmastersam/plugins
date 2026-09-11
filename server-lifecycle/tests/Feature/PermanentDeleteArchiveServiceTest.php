@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\BackupHost;
+use App\Models\Role;
 use App\Models\User;
 use HarbourmasterSam\ServerLifecycle\Enums\LifecycleStatus;
 use HarbourmasterSam\ServerLifecycle\Http\Controllers\ArchiveDownloadController;
@@ -15,7 +16,7 @@ uses(RefreshDatabase::class);
 it('allows a root admin to invoke permanent deletion for another users archive', function (): void {
     config()->set('server-lifecycle.users_may_delete', true);
     $owner = User::factory()->create();
-    $rootAdmin = User::factory()->create(['root_admin' => true]);
+    $rootAdmin = rootAdminUser();
     $archive = deletableArchive($owner);
     bindSuccessfulArchiveDeletion($archive);
     $this->actingAs($rootAdmin);
@@ -26,7 +27,9 @@ it('allows a root admin to invoke permanent deletion for another users archive',
         'service' => app(PermanentDeleteArchiveService::class),
     ]);
 
-    expect($archive->fresh()->status)->toBe(LifecycleStatus::Deleted);
+    expect($rootAdmin->isRootAdmin())->toBeTrue()
+        ->and($archive->fresh()->status)->toBe(LifecycleStatus::Deleted)
+        ->and($archive->fresh()->deletion_reason)->toBe('manual_admin');
 });
 
 it('allows an owner to delete when user deletion is enabled', function (): void {
@@ -37,18 +40,21 @@ it('allows an owner to delete when user deletion is enabled', function (): void 
 
     app(PermanentDeleteArchiveService::class)->handleManual($archive, $owner);
 
-    expect($archive->fresh()->status)->toBe(LifecycleStatus::Deleted);
+    expect($archive->fresh()->status)->toBe(LifecycleStatus::Deleted)
+        ->and($archive->fresh()->deletion_reason)->toBe('manual_owner');
 });
 
 it('allows a root admin when user deletion is disabled', function (): void {
     config()->set('server-lifecycle.users_may_delete', false);
     $archive = deletableArchive(User::factory()->create());
-    $rootAdmin = User::factory()->create(['root_admin' => true]);
+    $rootAdmin = rootAdminUser();
     bindSuccessfulArchiveDeletion($archive);
 
     app(PermanentDeleteArchiveService::class)->handleManual($archive, $rootAdmin);
 
-    expect($archive->fresh()->status)->toBe(LifecycleStatus::Deleted);
+    expect($rootAdmin->isRootAdmin())->toBeTrue()
+        ->and($archive->fresh()->status)->toBe(LifecycleStatus::Deleted)
+        ->and($archive->fresh()->deletion_reason)->toBe('manual_admin');
 });
 
 it('denies an ordinary non-owner', function (): void {
@@ -65,6 +71,17 @@ it('denies an owner when user deletion is disabled', function (): void {
     $archive = deletableArchive($owner);
 
     expect(fn () => app(PermanentDeleteArchiveService::class)->handleManual($archive, $owner))
+        ->toThrow(HttpException::class, '', 403);
+});
+
+it('denies a non-root user with an administrative role from deleting another users archive', function (): void {
+    config()->set('server-lifecycle.users_may_delete', true);
+    $archive = deletableArchive(User::factory()->create());
+    $admin = User::factory()->create();
+    $admin->assignRole(Role::query()->create(['name' => 'archive-test-admin']));
+
+    expect($admin->isRootAdmin())->toBeFalse()
+        ->and(fn () => app(PermanentDeleteArchiveService::class)->handleManual($archive, $admin))
         ->toThrow(HttpException::class, '', 403);
 });
 
@@ -133,6 +150,14 @@ function bindSuccessfulArchiveDeletion(ServerArchive $archive): void
     app()->instance(ArchiveStorageInterface::class, $storage);
 }
 
+function rootAdminUser(): User
+{
+    $rootAdmin = User::factory()->create();
+    $rootAdmin->assignRole(Role::getRootAdmin());
+
+    return $rootAdmin;
+}
+
 it('allows an owner to download through the authenticated controller route', function (): void {
     config()->set('server-lifecycle.users_may_download', true);
     $owner = User::factory()->create();
@@ -149,9 +174,11 @@ it('allows a root admin to download another users archive', function (): void {
     config()->set('server-lifecycle.users_may_download', false);
     $archive = deletableArchive(User::factory()->create());
     $storage = downloadableArchiveStorage($archive);
-    $this->actingAs(User::factory()->create(['root_admin' => true]));
+    $rootAdmin = rootAdminUser();
+    $this->actingAs($rootAdmin);
 
-    expect(app(ArchiveDownloadController::class)($archive, $storage)->getTargetUrl())
+    expect($rootAdmin->isRootAdmin())->toBeTrue()
+        ->and(app(ArchiveDownloadController::class)($archive, $storage)->getTargetUrl())
         ->toBe('https://archive.example.test/presigned');
 });
 
