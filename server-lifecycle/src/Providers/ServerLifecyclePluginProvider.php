@@ -36,7 +36,8 @@ class ServerLifecyclePluginProvider extends ServiceProvider
         ListServers::registerCustomHeaderActions(
             HeaderActionPosition::After,
             Action::make('archived_servers')
-                ->label(__('server-lifecycle::strings.archives.title'))
+                ->label('server-lifecycle::strings.archives.title')
+                ->translateLabel()
                 ->icon('tabler-archive')
                 ->url(fn (): string => ServerArchiveResource::getUrl(panel: 'app')),
         );
