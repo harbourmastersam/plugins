@@ -38,6 +38,8 @@ class LifecycleRelationManager extends RelationManager
             ])
             ->headerActions([
                 Action::make('archive_now')
+                    ->label('Archive now')
+                    ->icon('tabler-archive')
                     ->color('danger')
                     ->requiresConfirmation()
                     ->modalDescription('The server must be confirmed Offline. The same fail-closed archive workflow is used.')
@@ -48,6 +50,8 @@ class LifecycleRelationManager extends RelationManager
                         $archive->handle($this->getOwnerRecord(), $policy);
                     }),
                 Action::make('reset_activity')
+                    ->label('Reset activity')
+                    ->icon('tabler-refresh')
                     ->requiresConfirmation()
                     ->action(function (): void {
                         $state = ServerLifecycleState::query()->where('server_id', $this->getOwnerRecord()->id)->firstOrFail();
@@ -62,6 +66,8 @@ class LifecycleRelationManager extends RelationManager
                         ]);
                     }),
                 Action::make('configure')
+                    ->label('Configure')
+                    ->icon('tabler-settings')
                     ->schema([
                         Select::make('policy_id')
                             ->options(LifecyclePolicy::query()->where('enabled', true)->pluck('name', 'id'))

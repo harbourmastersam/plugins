@@ -38,9 +38,11 @@ class ServerArchiveResource extends Resource
             TextColumn::make('original_allocations')->formatStateUsing(fn ($state) => collect($state)->pluck('port')->join(', '))->label('Preferred ports'),
         ])->recordActions([
             Action::make('download')
+                ->icon('tabler-download')
                 ->visible(fn () => config('server-lifecycle.users_may_download'))
                 ->url(fn (ServerArchive $record) => route('server-lifecycle.archives.download', $record)),
             Action::make('restore')
+                ->icon('tabler-restore')
                 ->visible(fn () => config('server-lifecycle.users_may_restore'))
                 ->requiresConfirmation()
                 ->action(function (ServerArchive $record, StartRestoreService $service): void {
@@ -49,6 +51,7 @@ class ServerArchiveResource extends Resource
                 }),
             Action::make('delete_permanently')
                 ->label('Delete Permanently')
+                ->icon('tabler-trash')
                 ->color('danger')
                 ->visible(fn (ServerArchive $record): bool => (bool) config('server-lifecycle.users_may_delete')
                     && in_array($record->status, [LifecycleStatus::Archived, LifecycleStatus::ArchiveSuperseded, LifecycleStatus::DeletionWarning, LifecycleStatus::Restored, LifecycleStatus::RestoreFailed, LifecycleStatus::PendingDeletion, LifecycleStatus::DeleteFailed], true))

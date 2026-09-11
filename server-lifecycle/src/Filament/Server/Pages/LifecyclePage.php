@@ -42,6 +42,7 @@ class LifecyclePage extends Page
         return [
             Action::make('reset_activity')
                 ->label('Reset inactivity timer')
+                ->icon('tabler-refresh')
                 ->authorize(fn (): bool => (int) $server->owner_id === (int) auth()->id())
                 ->action(function (PolicyResolver $policies): void {
                     $policy = $policies->resolve($this->lifecycleState);
@@ -54,6 +55,8 @@ class LifecyclePage extends Page
                     $this->lifecycleState->refresh();
                 }),
             Action::make('archive_now')
+                ->label('Archive now')
+                ->icon('tabler-archive')
                 ->color('danger')
                 ->requiresConfirmation()
                 ->visible(fn (): bool => (bool) config('server-lifecycle.users_may_archive'))

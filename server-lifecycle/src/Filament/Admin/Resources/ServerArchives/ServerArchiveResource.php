@@ -36,10 +36,11 @@ class ServerArchiveResource extends Resource
             TextColumn::make('last_error')->wrap(),
         ])->recordActions([
             Action::make('download')->icon('tabler-download')->url(fn (ServerArchive $record) => route('server-lifecycle.archives.download', $record)),
-            Action::make('restore')->requiresConfirmation()->action(fn (ServerArchive $record, StartRestoreService $service) => $service->handle($record)),
-            Action::make('extend_retention')->requiresConfirmation()->action(fn (ServerArchive $record) => $record->update(['retention_expires_at' => $record->retention_expires_at?->addMonth()])),
+            Action::make('restore')->icon('tabler-restore')->requiresConfirmation()->action(fn (ServerArchive $record, StartRestoreService $service) => $service->handle($record)),
+            Action::make('extend_retention')->icon('tabler-calendar-plus')->requiresConfirmation()->action(fn (ServerArchive $record) => $record->update(['retention_expires_at' => $record->retention_expires_at?->addMonth()])),
             Action::make('discard_failed_restore')
                 ->label('Discard failed restore server')
+                ->icon('tabler-server-off')
                 ->color('warning')
                 ->visible(fn (ServerArchive $record): bool => $record->status === LifecycleStatus::RestoreFailed && $record->restored_server_id !== null)
                 ->requiresConfirmation()
@@ -53,6 +54,7 @@ class ServerArchiveResource extends Resource
                 }),
             Action::make('delete_permanently')
                 ->label('Delete Permanently')
+                ->icon('tabler-trash')
                 ->color('danger')
                 ->visible(fn (ServerArchive $record): bool => in_array($record->status, [LifecycleStatus::Archived, LifecycleStatus::ArchiveSuperseded, LifecycleStatus::DeletionWarning, LifecycleStatus::Restored, LifecycleStatus::RestoreFailed, LifecycleStatus::PendingDeletion, LifecycleStatus::DeleteFailed], true))
                 ->requiresConfirmation()
