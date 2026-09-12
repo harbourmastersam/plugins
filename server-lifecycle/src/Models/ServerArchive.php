@@ -5,6 +5,7 @@ namespace HarbourmasterSam\ServerLifecycle\Models;
 use App\Models\BackupHost;
 use App\Models\User;
 use HarbourmasterSam\ServerLifecycle\Enums\LifecycleStatus;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -25,5 +26,14 @@ class ServerArchive extends Model
     public function scopeVisibleTo($query, User $user)
     {
         return $user->isRootAdmin() ? $query : $query->where('owner_id', $user->id);
+    }
+
+    public function scopeNotDeleted(Builder $query): Builder
+    {
+        return $query->where(
+            'status',
+            '!=',
+            LifecycleStatus::Deleted->value
+        );
     }
 }

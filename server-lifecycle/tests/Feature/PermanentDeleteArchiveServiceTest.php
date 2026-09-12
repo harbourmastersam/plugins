@@ -9,6 +9,7 @@ use HarbourmasterSam\ServerLifecycle\Models\ServerArchive;
 use HarbourmasterSam\ServerLifecycle\Services\Archive\PermanentDeleteArchiveService;
 use HarbourmasterSam\ServerLifecycle\Storage\ArchiveStorageInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 uses(RefreshDatabase::class);
@@ -74,7 +75,7 @@ it('denies an owner when user deletion is disabled', function (): void {
         ->toThrow(HttpException::class, '', 403);
 });
 
-it('denies a non-root user with an administrative role from deleting another users archive', function (): void {
+it('denies a non-root admin without archive delete permission from deleting another users archive', function (): void {
     config()->set('server-lifecycle.users_may_delete', true);
     $archive = deletableArchive(User::factory()->create());
     $admin = User::factory()->create();
@@ -83,6 +84,53 @@ it('denies a non-root user with an administrative role from deleting another use
     expect($admin->isRootAdmin())->toBeFalse()
         ->and(fn () => app(PermanentDeleteArchiveService::class)->handleManual($archive, $admin))
         ->toThrow(HttpException::class, '', 403);
+});
+
+it('allows a delegated admin with archive delete permission to delete another users archive', function (): void {
+    config()->set('server-lifecycle.users_may_delete', false);
+    $archive = deletableArchive(User::factory()->create());
+    $admin = User::factory()->create();
+    $role = Role::query()->create([
+        'name' => 'Archive Administrator',
+        'guard_name' => Role::DEFAULT_GUARD_NAME,
+    ]);
+    $permission = Permission::firstOrCreate([
+        'name' => 'delete serverArchive',
+        'guard_name' => Role::DEFAULT_GUARD_NAME,
+    ]);
+    $role->givePermissionTo($permission);
+    $admin->assignRole($role);
+    bindSuccessfulArchiveDeletion($archive);
+
+    expect($admin->isRootAdmin())->toBeFalse()
+        ->and($admin->can('delete serverArchive'))->toBeTrue();
+
+    app(PermanentDeleteArchiveService::class)->handleManual($archive, $admin);
+
+    expect($archive->fresh()->status)->toBe(LifecycleStatus::Deleted)
+        ->and($archive->fresh()->deletion_reason)->toBe('manual_admin');
+});
+
+it('records an authorized owner with archive delete permission as an admin deletion', function (): void {
+    config()->set('server-lifecycle.users_may_delete', false);
+    $owner = User::factory()->create();
+    $role = Role::query()->create([
+        'name' => 'Archive Owner Administrator',
+        'guard_name' => Role::DEFAULT_GUARD_NAME,
+    ]);
+    $permission = Permission::firstOrCreate([
+        'name' => 'delete serverArchive',
+        'guard_name' => Role::DEFAULT_GUARD_NAME,
+    ]);
+    $role->givePermissionTo($permission);
+    $owner->assignRole($role);
+    $archive = deletableArchive($owner);
+    bindSuccessfulArchiveDeletion($archive);
+
+    app(PermanentDeleteArchiveService::class)->handleManual($archive, $owner);
+
+    expect($archive->fresh()->status)->toBe(LifecycleStatus::Deleted)
+        ->and($archive->fresh()->deletion_reason)->toBe('manual_admin');
 });
 
 it('deletes only the exact archive object and clears its key after confirmation', function (): void {
