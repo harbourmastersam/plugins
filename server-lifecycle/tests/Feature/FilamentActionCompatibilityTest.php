@@ -2,6 +2,8 @@
 
 use App\Filament\Admin\Resources\Servers\Pages\EditServer;
 use App\Models\Server;
+use App\Models\Role;
+use App\Models\User;
 use Filament\Actions\Action;
 use Filament\Tables\Table;
 use HarbourmasterSam\ServerLifecycle\Filament\Admin\Resources\LifecyclePolicies\Pages\CreateLifecyclePolicy;
@@ -12,6 +14,10 @@ use HarbourmasterSam\ServerLifecycle\Filament\Admin\Resources\ServerArchives\Ser
 use HarbourmasterSam\ServerLifecycle\Filament\App\Resources\ServerArchives\Pages\ListServerArchives;
 use HarbourmasterSam\ServerLifecycle\Filament\App\Resources\ServerArchives\ServerArchiveResource;
 use HarbourmasterSam\ServerLifecycle\Models\ServerArchive;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
+
+uses(RefreshDatabase::class);
 
 it('gives every lifecycle relation manager action an icon', function (): void {
     $server = Server::factory()->create();
@@ -138,6 +144,52 @@ it('renders admin archive downloads as normal new-tab links without SPA navigati
         ->and($html)->toContain('target="_blank"')
         ->and($html)->not->toContain('wire:navigate');
 });
+
+it('authorizes permanent deletion for a delegated admin with archive delete permission', function (): void {
+    $admin = User::factory()->create();
+    assignArchiveDeletePermission($admin);
+    $this->actingAs($admin);
+
+    $action = adminServerArchiveResourceActions()['delete_permanently'];
+
+    expect($admin->isRootAdmin())->toBeFalse()
+        ->and($admin->can('delete serverArchive'))->toBeTrue()
+        ->and($action->isAuthorized())->toBeTrue();
+});
+
+it('does not authorize permanent deletion for an admin without archive delete permission', function (): void {
+    $admin = User::factory()->create();
+    $admin->assignRole(Role::query()->create([
+        'name' => 'Archive Viewer',
+        'guard_name' => Role::DEFAULT_GUARD_NAME,
+    ]));
+    $this->actingAs($admin);
+
+    expect(adminServerArchiveResourceActions()['delete_permanently']->isAuthorized())->toBeFalse();
+});
+
+it('authorizes permanent deletion for a root admin', function (): void {
+    $rootAdmin = User::factory()->create();
+    $rootAdmin->assignRole(Role::getRootAdmin());
+    $this->actingAs($rootAdmin);
+
+    expect($rootAdmin->can('delete serverArchive'))->toBeTrue()
+        ->and(adminServerArchiveResourceActions()['delete_permanently']->isAuthorized())->toBeTrue();
+});
+
+function assignArchiveDeletePermission(User $user): void
+{
+    $role = Role::query()->create([
+        'name' => 'Archive Administrator',
+        'guard_name' => Role::DEFAULT_GUARD_NAME,
+    ]);
+    $permission = Permission::firstOrCreate([
+        'name' => 'delete serverArchive',
+        'guard_name' => Role::DEFAULT_GUARD_NAME,
+    ]);
+    $role->givePermissionTo($permission);
+    $user->assignRole($role);
+}
 
 /** @return \Illuminate\Support\Collection<string, Action> */
 function serverArchiveResourceActions(): \Illuminate\Support\Collection

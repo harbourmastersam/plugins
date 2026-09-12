@@ -24,7 +24,9 @@ class ServerArchiveResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->visibleTo(auth()->user());
+        return parent::getEloquentQuery()
+            ->visibleTo(auth()->user())
+            ->notDeleted();
     }
 
     public static function table(Table $table): Table

@@ -13,6 +13,7 @@ use HarbourmasterSam\ServerLifecycle\Services\Archive\PermanentDeleteArchiveServ
 use App\Models\Server;
 use App\Services\Servers\ServerDeletionService;
 use HarbourmasterSam\ServerLifecycle\Services\Restore\StartRestoreService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Number;
 
 class ServerArchiveResource extends Resource
@@ -22,6 +23,12 @@ class ServerArchiveResource extends Resource
     protected static string|\BackedEnum|null $navigationIcon = 'tabler-archive';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Server Lifecycle';
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->notDeleted();
+    }
 
     public static function table(Table $table): Table
     {
@@ -60,6 +67,7 @@ class ServerArchiveResource extends Resource
                 ->label('Delete Permanently')
                 ->icon('tabler-trash')
                 ->color('danger')
+                ->authorize(fn (): bool => auth()->user()?->can('delete serverArchive') ?? false)
                 ->visible(fn (ServerArchive $record): bool => in_array($record->status, [LifecycleStatus::Archived, LifecycleStatus::ArchiveSuperseded, LifecycleStatus::DeletionWarning, LifecycleStatus::Restored, LifecycleStatus::RestoreFailed, LifecycleStatus::PendingDeletion, LifecycleStatus::DeleteFailed], true))
                 ->requiresConfirmation()
                 ->modalHeading(fn (ServerArchive $record): string => "Permanently delete $record->server_name?")
