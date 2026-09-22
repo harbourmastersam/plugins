@@ -2,6 +2,7 @@
 
 namespace Boy132\UserAttributeMapper\Providers;
 
+use Boy132\UserAttributeMapper\Attributes\PelicanUserAttributeProvider;
 use Boy132\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
 use Boy132\UserAttributeMapper\Events\RegisterUserAttributes;
 use Boy132\UserAttributeMapper\Http\Middleware\CaptureOAuthClaims;
@@ -26,8 +27,9 @@ class UserAttributeMapperPluginProvider extends ServiceProvider
         $this->app['router']->pushMiddlewareToGroup('web', CaptureOAuthClaims::class);
         Event::listen(Login::class, SyncMappedAttributes::class);
 
-        // Pelican registers every enabled plugin provider before it boots the
-        // application, so listeners installed by optional plugins are ready here.
+        // Pelican registers all enabled plugin providers before Laravel finishes
+        // booting. Extension listeners are installed in register(), so this final
+        // callback is independent of plugin provider order.
         $this->app->booted(function (): void {
             if (!$this->app->bound(UserAttributeRegistryContract::class)) {
                 Log::warning('User Attribute Mapper registration skipped: registry service is not bound.');
@@ -36,13 +38,8 @@ class UserAttributeMapperPluginProvider extends ServiceProvider
             }
 
             $registry = $this->app->make(UserAttributeRegistryContract::class);
+            $this->app->make(PelicanUserAttributeProvider::class)->register($registry);
             Event::dispatch(new RegisterUserAttributes($registry));
-
-            $definitions = $registry->all();
-            Log::debug('User Attribute Mapper registration completed.', [
-                'registered_attributes' => $definitions->count(),
-                'owners' => $definitions->pluck('owner')->unique()->values()->all(),
-            ]);
         });
     }
 }

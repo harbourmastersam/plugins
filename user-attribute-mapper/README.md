@@ -23,6 +23,12 @@ Supported types are string, integer, float, boolean, array, and object. Conversi
 
 The runtime registry is the security boundary. Administrators cannot enter model classes, columns, methods, or expressions. Attributes default to not identity-writable; their owner must provide a writer and opt in. `sensitive` and `privileged` metadata is available to UIs, and raw values, tokens, authorization codes, refresh tokens, and secrets are never logged or persisted. The mapper neither decodes tokens nor performs a second user-info/token request.
 
+The mapper itself explicitly registers the safe Pelican profile fields `username`,
+`email`, `external_id`, `language`, and `timezone` as identity-writable. User `id`
+and `uuid` are available read-only. This is an allowlist: authentication secrets,
+administrator state, roles, permissions, and arbitrary model columns are never
+exposed.
+
 ## OAuth compatibility and internals
 
 `CaptureOAuthClaims` runs only on Pelican's `auth.oauth.callback` route. `OAuthProviderResolver` is the sole adapter to Pelican's internal `App\Extensions\OAuth\OAuthService`. At callback time it resolves the provider that Pelican/Socialite already configured, decorates that exact instance, calls `user()` exactly once, captures `getRaw()` when available, and returns the same Socialite user. Mapping occurs only on Laravel's successful `Login` event.
@@ -33,16 +39,19 @@ Generic OIDC Providers registers its dynamic schemas with that same OAuth servic
 
 Pelican discovers the service providers under each enabled plugin's `src/Providers` directory. Their `register()` methods run before provider `boot()` methods; Laravel's application `booted` callbacks then run after every provider has booted. User Attribute Mapper owns attribute discovery at that final point: it dispatches `Boy132\UserAttributeMapper\Events\RegisterUserAttributes` once with its singleton registry.
 
-Keep integration optional: do not add a Composer dependency, and do not load a mapper-specific integration class unless the mapper event exists. Subscribe during the owning plugin provider's `boot()` method:
+Keep integration optional: do not add a Composer dependency. Subscribe by string
+during the owning plugin provider's `register()` method. Registering the event name
+does not autoload mapper code, and the integration closure remains dormant when the
+mapper is disabled. Register-phase subscription is important: it guarantees that
+the listener exists before the mapper's end-of-bootstrap dispatch regardless of
+plugin order.
 
 ```php
 $eventClass = 'Boy132\\UserAttributeMapper\\Events\\RegisterUserAttributes';
-if (class_exists($eventClass)) {
-    Event::listen($eventClass, function (object $event): void {
-        // Resolve this mapper-specific class only after the event check.
-        (new MyPluginUserAttributeProvider())->register($event->registry);
-    });
-}
+$this->app['events']->listen($eventClass, function (object $event): void {
+    // Resolve the mapper-specific class only if the event is actually dispatched.
+    (new MyPluginUserAttributeProvider())->register($event->registry);
+});
 ```
 
 The lazily loaded provider may register `user_settings.max_widgets` as follows:
