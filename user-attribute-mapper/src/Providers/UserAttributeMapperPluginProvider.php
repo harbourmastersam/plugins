@@ -3,6 +3,7 @@
 namespace Boy132\UserAttributeMapper\Providers;
 
 use Boy132\UserAttributeMapper\Attributes\PelicanUserAttributeProvider;
+use Boy132\UserAttributeMapper\Console\Commands\InspectUserAttributeRegistryCommand;
 use Boy132\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
 use Boy132\UserAttributeMapper\Events\RegisterUserAttributes;
 use Boy132\UserAttributeMapper\Http\Middleware\CaptureOAuthClaims;
@@ -20,6 +21,10 @@ class UserAttributeMapperPluginProvider extends ServiceProvider
     {
         $this->app->singleton(UserAttributeRegistryContract::class, UserAttributeRegistry::class);
         $this->app->scoped(OAuthClaimContext::class, fn () => new OAuthClaimContext());
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([InspectUserAttributeRegistryCommand::class]);
+        }
     }
 
     public function boot(): void
