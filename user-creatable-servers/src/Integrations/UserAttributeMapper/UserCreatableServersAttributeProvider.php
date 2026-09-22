@@ -23,7 +23,7 @@ final class UserCreatableServersAttributeProvider
                 label: $label,
                 type: AttributeType::Integer,
                 reader: fn ($user) => UserResourceLimits::where('user_id', $user->id)->value($field),
-                writer: function ($user, int $value) use ($field): void {
+                writer: function ($user, ?int $value) use ($field): void {
                     $limits = UserResourceLimits::firstOrNew(['user_id' => $user->id]);
                     if (!$limits->exists) $limits->fill(['cpu' => 0, 'memory' => 0, 'disk' => 0, 'server_limit' => null]);
                     $limits->{$field} = $value;
