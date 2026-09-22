@@ -39,6 +39,30 @@ Generic OIDC Providers registers its dynamic schemas with that same OAuth servic
 
 Pelican discovers the service providers under each enabled plugin's `src/Providers` directory. Their `register()` methods run before provider `boot()` methods; Laravel's application `booted` callbacks then run after every provider has booted. User Attribute Mapper owns attribute discovery at that final point: it dispatches `Boy132\UserAttributeMapper\Events\RegisterUserAttributes` once with its singleton registry.
 
+### Verify the installed runtime
+
+Run the inspection command in the installed Pelican directory after enabling both
+plugins. Unlike a unit test, this resolves the registry from the running
+application container and therefore inspects the installed plugin copies and the
+listeners that Pelican actually loaded:
+
+```console
+php artisan p:user-attribute-mapper:inspect --require-ucs
+```
+
+The command exits unsuccessfully unless the five writable Pelican attributes and
+all four writable User Creatable Servers attributes are present. It also prints
+the registry object ID and the number of listeners installed for the extension
+event. Use `php artisan plugin:list` (or inspect Pelican's Plugin model on releases
+without that command) to independently confirm that both plugins are enabled and
+loadable.
+
+After replacing an installed plugin copy, clear Laravel's generated caches with
+`php artisan optimize:clear`. Restart any long-lived Octane workers and the PHP-FPM
+service used by the Panel so that OPcache and persistent processes cannot retain
+the previous provider code. The exact service name is distribution-specific; do
+not assume that running `optimize:clear` restarts PHP workers.
+
 Keep integration optional: do not add a Composer dependency. Subscribe by string
 during the owning plugin provider's `register()` method. Registering the event name
 does not autoload mapper code, and the integration closure remains dormant when the
