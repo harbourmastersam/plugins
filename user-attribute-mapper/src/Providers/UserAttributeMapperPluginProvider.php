@@ -29,6 +29,8 @@ class UserAttributeMapperPluginProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->loadViewsFrom(plugin_path('user-attribute-mapper', 'resources/views'), 'user-attribute-mapper');
+
         $this->app['router']->pushMiddlewareToGroup('web', CaptureOAuthClaims::class);
         Event::listen(Login::class, SyncMappedAttributes::class);
 
