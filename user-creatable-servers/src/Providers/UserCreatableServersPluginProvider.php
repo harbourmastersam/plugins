@@ -11,20 +11,14 @@ use App\Models\User;
 use Boy132\UserCreatableServers\Filament\Admin\Resources\Users\RelationManagers\UserResourceLimitRelationManager;
 use Boy132\UserCreatableServers\Filament\App\Widgets\UserResourceLimitsOverview;
 use Boy132\UserCreatableServers\Filament\Components\Actions\CreateServerAction;
-use Boy132\UserCreatableServers\Http\Middleware\CaptureOAuthClaims;
-use Boy132\UserCreatableServers\Listeners\SyncUserResourceLimitsOnLogin;
+use Boy132\UserCreatableServers\Integrations\UserAttributeMapper\UserCreatableServersAttributeProvider;
 use Boy132\UserCreatableServers\Models\UserResourceLimits;
-use Boy132\UserCreatableServers\OAuth\OAuthClaimContext;
-use Illuminate\Auth\Events\Login;
-use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 
 class UserCreatableServersPluginProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->scoped(OAuthClaimContext::class, fn () => new OAuthClaimContext());
-
         UserResource::registerCustomRelations(UserResourceLimitRelationManager::class);
 
         ListServers::registerCustomHeaderWidgets(HeaderWidgetPosition::Before, UserResourceLimitsOverview::class);
@@ -37,10 +31,13 @@ class UserCreatableServersPluginProvider extends ServiceProvider
 
     public function boot(): void
     {
-        $this->app['router']->pushMiddlewareToGroup('web', CaptureOAuthClaims::class);
-
         User::resolveRelationUsing('userResourceLimits', fn (User $user) => $user->belongsTo(UserResourceLimits::class, 'id', 'user_id'));
 
-        Event::listen(Login::class, SyncUserResourceLimitsOnLogin::class);
+        // String-based checks keep this plugin fully functional when the mapper is absent.
+        $this->app->booted(function (): void {
+            $contract = 'Boy132\\UserAttributeMapper\\Contracts\\UserAttributeRegistryContract';
+            if (!$this->app->bound($contract)) return;
+            (new UserCreatableServersAttributeProvider())->register($this->app->make($contract));
+        });
     }
 }
