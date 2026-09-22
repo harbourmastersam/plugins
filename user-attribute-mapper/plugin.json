@@ -1,0 +1,15 @@
+{
+    "id": "user-attribute-mapper",
+    "name": "User Attribute Mapper",
+    "author": "Boy132",
+    "version": "1.0.0",
+    "description": "Maps OAuth/OIDC claims to attributes explicitly registered by Pelican plugins.",
+    "category": "plugin",
+    "url": "https://hub.pelican.dev/plugins/user-attribute-mapper",
+    "update_url": "https://hub.pelican.dev/plugins/user-attribute-mapper/update.json",
+    "namespace": "Boy132\\UserAttributeMapper",
+    "class": "UserAttributeMapperPlugin",
+    "panels": null,
+    "panel_version": null,
+    "composer_packages": null
+}
