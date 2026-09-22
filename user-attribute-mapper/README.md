@@ -31,18 +31,18 @@ Generic OIDC Providers registers its dynamic schemas with that same OAuth servic
 
 ## Registering an attribute from another plugin
 
-Keep integration optional: do not add a Composer dependency, and do not instantiate the integration file until the mapper binding exists. Run this after all providers have registered (for example, an application `booted` callback):
+Pelican discovers the service providers under each enabled plugin's `src/Providers` directory. Their `register()` methods run before provider `boot()` methods; Laravel's application `booted` callbacks then run after every provider has booted. User Attribute Mapper owns attribute discovery at that final point: it dispatches `Boy132\UserAttributeMapper\Events\RegisterUserAttributes` once with its singleton registry.
+
+Keep integration optional: do not add a Composer dependency, and do not load a mapper-specific integration class unless the mapper event exists. Subscribe during the owning plugin provider's `boot()` method:
 
 ```php
-$app->booted(function () use ($app): void {
-    $contract = 'Boy132\\UserAttributeMapper\\Contracts\\UserAttributeRegistryContract';
-    if (!$app->bound($contract)) {
-        return;
-    }
-
-    // Resolve this mapper-specific class only after the binding check.
-    (new MyPluginUserAttributeProvider())->register($app->make($contract));
-});
+$eventClass = 'Boy132\\UserAttributeMapper\\Events\\RegisterUserAttributes';
+if (class_exists($eventClass)) {
+    Event::listen($eventClass, function (object $event): void {
+        // Resolve this mapper-specific class only after the event check.
+        (new MyPluginUserAttributeProvider())->register($event->registry);
+    });
+}
 ```
 
 The lazily loaded provider may register `user_settings.max_widgets` as follows:

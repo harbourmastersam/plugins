@@ -18,7 +18,7 @@ Add the deployment tag (`user_creatable_servers` by default) to the nodes that s
 
 When User Attribute Mapper is installed, this plugin advertises its existing CPU,
 memory, disk, and server-limit fields as identity-writable attributes. The adapter
-is loaded only after the mapper registry is detected and writes the authoritative
+is loaded only when the mapper's registration event is available and writes the authoritative
 `user_resource_limits` row. User Creatable Servers remains fully functional when
 the mapper is absent and contains no OAuth provider or claim parsing logic.
 

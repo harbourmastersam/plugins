@@ -11,8 +11,9 @@ use App\Models\User;
 use Boy132\UserCreatableServers\Filament\Admin\Resources\Users\RelationManagers\UserResourceLimitRelationManager;
 use Boy132\UserCreatableServers\Filament\App\Widgets\UserResourceLimitsOverview;
 use Boy132\UserCreatableServers\Filament\Components\Actions\CreateServerAction;
-use Boy132\UserCreatableServers\Integrations\UserAttributeMapper\UserCreatableServersAttributeProvider;
 use Boy132\UserCreatableServers\Models\UserResourceLimits;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\ServiceProvider;
 
 class UserCreatableServersPluginProvider extends ServiceProvider
@@ -33,11 +34,25 @@ class UserCreatableServersPluginProvider extends ServiceProvider
     {
         User::resolveRelationUsing('userResourceLimits', fn (User $user) => $user->belongsTo(UserResourceLimits::class, 'id', 'user_id'));
 
-        // String-based checks keep this plugin fully functional when the mapper is absent.
-        $this->app->booted(function (): void {
-            $contract = 'Boy132\\UserAttributeMapper\\Contracts\\UserAttributeRegistryContract';
-            if (!$this->app->bound($contract)) return;
-            (new UserCreatableServersAttributeProvider())->register($this->app->make($contract));
+        // Keep the mapper optional: none of its classes are resolved unless its
+        // registration event is available in Pelican's enabled plugin set.
+        $eventClass = 'Boy132\\UserAttributeMapper\\Events\\RegisterUserAttributes';
+        if (!class_exists($eventClass)) {
+            Log::debug('User Creatable Servers attribute integration unavailable: User Attribute Mapper is not enabled.');
+
+            return;
+        }
+
+        /** @param object{registry: mixed} $event */
+        Event::listen($eventClass, function (object $event): void {
+            $providerClass = 'Boy132\\UserCreatableServers\\Integrations\\UserAttributeMapper\\UserCreatableServersAttributeProvider';
+            $before = $event->registry->all()->count();
+            (new $providerClass())->register($event->registry);
+
+            Log::debug('User Creatable Servers contributed identity-writable user attributes.', [
+                'registered_attributes' => $event->registry->all()->count() - $before,
+                'owner' => 'user-creatable-servers',
+            ]);
         });
     }
 }
