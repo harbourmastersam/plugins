@@ -21,7 +21,9 @@ function profileWorkspace(): ProfileMappingWorkspace
         type: AttributeType::Integer,
         reader: fn () => null,
         writer: fn () => null,
+        clearer: fn () => null,
         group: 'Example Plugin',
+        nullable: true,
         writableFromIdentity: true,
     ));
     $registry->register(new UserAttributeDefinition(
@@ -48,7 +50,37 @@ it('builds target-driven dynamic groups and excludes read-only attributes', func
             'pelican.timezone',
         ])
         ->and(collect($state['groups']['Example Plugin'])->pluck('key')->all())->toBe(['example-plugin.foo'])
-        ->and($state['groups']['Pelican'][0]['mappings'][0]['source_claim'])->toBe('');
+        ->and($state['groups']['Pelican'][0]['mappings'][0]['source_claim'])->toBe('')
+        ->and($state['groups']['Pelican'][0]['nullable'])->toBeFalse()
+        ->and($state['groups']['Pelican'][0]['clear_supported'])->toBeFalse()
+        ->and($state['groups']['Example Plugin'][0]['nullable'])->toBeTrue()
+        ->and($state['groups']['Example Plugin'][0]['clear_supported'])->toBeTrue();
+});
+
+it('toggles only the staged enabled state and retains its source claim', function (): void {
+    $page = new \Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+    $page->groups = ['Pelican' => [[
+        'mappings' => [[
+            'source_claim' => 'preferred_username',
+            'enabled' => true,
+            'priority' => 25,
+            'description' => 'Login name',
+            'missing_claim_behavior' => 'preserve',
+        ]],
+    ]]];
+
+    $page->toggleMappingEnabled('Pelican', 0, 0);
+
+    expect($page->groups['Pelican'][0]['mappings'][0])->toMatchArray([
+        'source_claim' => 'preferred_username',
+        'enabled' => false,
+        'priority' => 25,
+        'description' => 'Login name',
+        'missing_claim_behavior' => 'preserve',
+    ])->and(AttributeMapping::query()->count())->toBe(0);
+
+    $page->toggleMappingEnabled('Pelican', 0, 0);
+    expect($page->groups['Pelican'][0]['mappings'][0]['enabled'])->toBeTrue();
 });
 
 it('loads, creates, updates, clears and isolates provider mappings including wildcard mappings', function (): void {

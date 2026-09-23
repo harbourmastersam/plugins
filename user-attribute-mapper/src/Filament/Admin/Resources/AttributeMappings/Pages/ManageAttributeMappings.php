@@ -65,6 +65,17 @@ class ManageAttributeMappings extends Page
         }
     }
 
+    /** Toggle a configured mapping in the staged workspace without persisting it. */
+    public function toggleMappingEnabled(string $group, int $row, int $mapping): void
+    {
+        if (!isset($this->groups[$group][$row]['mappings'][$mapping])) return;
+
+        $state = &$this->groups[$group][$row]['mappings'][$mapping];
+        if (blank($state['source_claim'] ?? null)) return;
+
+        $state['enabled'] = !(bool) ($state['enabled'] ?? true);
+    }
+
     public function removeUnavailable(int $index): void
     {
         unset($this->unavailable[$index]);
