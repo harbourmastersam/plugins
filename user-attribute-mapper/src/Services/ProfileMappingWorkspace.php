@@ -25,6 +25,10 @@ class ProfileMappingWorkspace
                 'label' => $definition->label,
                 'type' => $definition->type->value,
                 'description' => $definition->description,
+                'nullable' => $definition->nullable,
+                'clear_supported' => $definition->clearer !== null,
+                'owner' => $definition->owner,
+                'group' => $definition->group ?? $definition->owner,
                 'mappings' => $mappings ?: [$this->emptyMappingState()],
             ];
         }
