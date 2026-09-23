@@ -18,15 +18,6 @@ class UserCreatableServersPluginProvider extends ServiceProvider
 {
     public function register(): void
     {
-        // Register by event name without loading mapper classes. Laravel invokes
-        // every provider's register() before boot callbacks, making this safe in
-        // either plugin order while keeping the mapper entirely optional.
-        $eventClass = 'Boy132\\UserAttributeMapper\\Events\\RegisterUserAttributes';
-        $this->app['events']->listen($eventClass, function (object $event): void {
-            $providerClass = 'Boy132\\UserCreatableServers\\Integrations\\UserAttributeMapper\\UserCreatableServersAttributeProvider';
-            (new $providerClass())->register($event->registry);
-        });
-
         UserResource::registerCustomRelations(UserResourceLimitRelationManager::class);
 
         ListServers::registerCustomHeaderWidgets(HeaderWidgetPosition::Before, UserResourceLimitsOverview::class);

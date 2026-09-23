@@ -38,6 +38,8 @@ npm i -g yarn
 - [Tawk.to Widget](/tawkto-widget) - Adds a Tawk.to live chat widget
 - [Theme Customizer](/theme-customizer) - Customize panel font and colors
 - [Tickets](/tickets) - Simple ticket system for user support
+- [User Attribute Mapper](/user-attribute-mapper) - Map OAuth/OIDC claims to explicitly registered user attributes
+- [User Attribute Mapper - UCS Bridge](/user-attribute-mapper-ucs) - Expose official UCS limits to User Attribute Mapper
 - [User Creatable Servers](/user-creatable-servers) - Allow users to create their own servers
 
 ## Themes
