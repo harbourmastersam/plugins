@@ -5,6 +5,7 @@ namespace Boy132\UserAttributeMapper\Services;
 use Boy132\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
 use Boy132\UserAttributeMapper\Models\AttributeMapping;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 /** Builds and reconciles the target-driven state used by the profile mapping UI. */
 class ProfileMappingWorkspace
@@ -50,6 +51,10 @@ class ProfileMappingWorkspace
      */
     public function save(string $provider, array $groups, array $unavailable): void
     {
+        if ($provider === '' || $provider === '*') {
+            throw new InvalidArgumentException('Mappings must belong to a configured identity provider.');
+        }
+
         DB::transaction(function () use ($provider, $groups, $unavailable): void {
             $existing = AttributeMapping::query()->where('provider', $provider)->get()->keyBy('id');
             $kept = [];
