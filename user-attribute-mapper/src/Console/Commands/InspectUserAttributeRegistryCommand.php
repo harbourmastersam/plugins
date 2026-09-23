@@ -9,7 +9,7 @@ use Illuminate\Contracts\Events\Dispatcher;
 
 final class InspectUserAttributeRegistryCommand extends Command
 {
-    protected $signature = 'p:user-attribute-mapper:inspect {--require-ucs : Fail unless all User Creatable Servers attributes are registered}';
+    protected $signature = 'p:user-attribute-mapper:inspect {--require-ucs : Fail unless the UCS bridge registered all User Creatable Servers attributes}';
 
     protected $description = 'Inspect the runtime user attribute registry and its extension listener.';
 

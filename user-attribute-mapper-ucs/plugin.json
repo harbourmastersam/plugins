@@ -1,0 +1,15 @@
+{
+    "id": "user-attribute-mapper-ucs",
+    "name": "User Attribute Mapper - UCS Bridge",
+    "author": "harbourmastersam",
+    "version": "0.1.0",
+    "description": "Adds User Attribute Mapper support for the official User Creatable Servers Pelican plugin.",
+    "category": "plugin",
+    "url": "https://github.com/harbourmastersam/plugins/tree/main/user-attribute-mapper-ucs",
+    "update_url": null,
+    "namespace": "HarbourmasterSam\\UserAttributeMapperUcs",
+    "class": "UserAttributeMapperUcsPlugin",
+    "panels": null,
+    "panel_version": null,
+    "composer_packages": null
+}

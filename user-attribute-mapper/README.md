@@ -37,80 +37,22 @@ exposed.
 
 Generic OIDC Providers registers its dynamic schemas with that same OAuth service, so it needs no special integration and newly created providers work by ID. If Pelican changes its callback route, OAuth registry, Socialite manager caching, or login event, update only the middleware/resolver integration. Providers that do not expose raw attributes are safely skipped.
 
-## Registering an attribute from another plugin
+## Plugin integrations
 
-Pelican discovers the service providers under each enabled plugin's `src/Providers` directory. Their `register()` methods run before provider `boot()` methods; Laravel's application `booted` callbacks then run after every provider has booted. User Attribute Mapper owns attribute discovery at that final point: it dispatches `Boy132\UserAttributeMapper\Events\RegisterUserAttributes` once with its singleton registry.
+**Plugin authors and bridge maintainers:** read [Integrating Plugins with User Attribute Mapper](docs/PLUGIN-INTEGRATIONS.md). It defines the supported native-first architecture, standalone bridge fallback, stable-key and storage-ownership contracts, optional dependency pattern, security allowlisting, compatibility policy, and testing requirements. Do not add plugin-specific compatibility code to mapper core.
 
-### Verify the installed runtime
+Official User Creatable Servers remains unchanged and does not advertise mapper attributes. To expose its resource limits, install and enable the separate `user-attribute-mapper-ucs` bridge alongside both plugins. The bridge supplies `user-creatable-servers.cpu`, `.memory`, `.disk`, and `.server_limit` while UCS retains authoritative storage.
 
-Run the inspection command in the installed Pelican directory after enabling both
-plugins. Unlike a unit test, this resolves the registry from the running
-application container and therefore inspects the installed plugin copies and the
-listeners that Pelican actually loaded:
+### Verify the installed UCS bridge runtime
+
+After enabling User Attribute Mapper, official UCS, and the UCS bridge, run:
 
 ```console
+php artisan optimize:clear
 php artisan p:user-attribute-mapper:inspect --require-ucs
 ```
 
-The command exits unsuccessfully unless the five writable Pelican attributes and
-all four writable User Creatable Servers attributes are present. It also prints
-the registry object ID and the number of listeners installed for the extension
-event. Use `php artisan plugin:list` (or inspect Pelican's Plugin model on releases
-without that command) to independently confirm that both plugins are enabled and
-loadable.
-
-After replacing an installed plugin copy, clear Laravel's generated caches with
-`php artisan optimize:clear`. Restart any long-lived Octane workers and the PHP-FPM
-service used by the Panel so that OPcache and persistent processes cannot retain
-the previous provider code. The exact service name is distribution-specific; do
-not assume that running `optimize:clear` restarts PHP workers.
-
-Keep integration optional: do not add a Composer dependency. Subscribe by string
-during the owning plugin provider's `register()` method. Registering the event name
-does not autoload mapper code, and the integration closure remains dormant when the
-mapper is disabled. Register-phase subscription is important: it guarantees that
-the listener exists before the mapper's end-of-bootstrap dispatch regardless of
-plugin order.
-
-```php
-$eventClass = 'Boy132\\UserAttributeMapper\\Events\\RegisterUserAttributes';
-$this->app['events']->listen($eventClass, function (object $event): void {
-    // Resolve the mapper-specific class only if the event is actually dispatched.
-    (new MyPluginUserAttributeProvider())->register($event->registry);
-});
-```
-
-The lazily loaded provider may register `user_settings.max_widgets` as follows:
-
-```php
-$registry->register(new UserAttributeDefinition(
-    key: 'my-plugin.max_widgets',
-    owner: 'my-plugin',
-    label: 'Maximum Widgets',
-    type: AttributeType::Integer,
-    reader: fn (User $user) => UserSetting::whereBelongsTo($user)->value('max_widgets'),
-    writer: fn (User $user, int $value) => UserSetting::updateOrCreate(
-        ['user_id' => $user->id], ['max_widgets' => $value],
-    ),
-    group: 'My Plugin',
-    writableFromIdentity: true,
-    rules: ['required', 'integer', 'min:0', 'max:100'],
-));
-```
-
-An administrator can then map `entitlements.max_widgets` to `my-plugin.max_widgets`. The reader/writer always use My Plugin's authoritative storage. If My Plugin is disabled or removed, the mapping remains unavailable; reinstalling and registering the same key reactivates it automatically.
-
-## User Creatable Servers / Authentik example
-
-User Creatable Servers optionally advertises four adapters backed by its existing `user_resource_limits` row: `user-creatable-servers.cpu`, `.memory`, `.disk`, and `.server_limit`. It remains fully usable without this mapper.
-
-Given raw claims:
-
-```json
-{"pelican_limits":{"cpu":800,"memory":16384,"disk":100000,"server_limit":5}}
-```
-
-create four mappings from each `pelican_limits.*` path to its corresponding UCS key. The provider ID may be any Pelican-native or Generic OIDC provider (including an Authentik-backed provider); no provider name is hard-coded. After the callback and successful Login event, the UCS adapter creates/updates the authoritative row.
+`--require-ucs` validates the combined runtime integration—mapper plus bridge plus official UCS—not native registration by UCS. It requires the five writable Pelican attributes and four bridge-provided UCS attributes (nine writable definitions total). Use `php artisan plugin:list`, where available, to independently confirm all three plugins are enabled and loadable. Restart long-lived workers/PHP-FPM after replacing installed plugin files; `optimize:clear` does not restart them.
 
 ## Troubleshooting and manual regression test
 
