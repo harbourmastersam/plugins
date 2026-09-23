@@ -16,7 +16,9 @@ class AttributeMappingService
     /** @param array<string, mixed> $rawClaims */
     public function apply(User $user, string $provider, array $rawClaims): void
     {
-        AttributeMapping::query()->where('enabled', true)->whereIn('provider', [$provider, '*'])->orderBy('priority')->orderBy('id')->each(function (AttributeMapping $mapping) use ($user, $provider, $rawClaims): void {
+        // Wildcard mappings are retained as legacy records, but are deliberately inactive:
+        // claim schemas differ between providers, so only the authenticating provider applies.
+        AttributeMapping::query()->where('enabled', true)->where('provider', $provider)->orderBy('priority')->orderBy('id')->each(function (AttributeMapping $mapping) use ($user, $provider, $rawClaims): void {
             $context = ['user_id' => $user->id, 'provider' => $provider, 'mapping_id' => $mapping->id, 'source_claim' => $mapping->source_claim, 'target_attribute' => $mapping->target_attribute];
             $definition = $this->registry->get($mapping->target_attribute);
             if ($definition === null || !$definition->writableFromIdentity) {

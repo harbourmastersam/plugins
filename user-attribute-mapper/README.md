@@ -6,12 +6,14 @@ User Attribute Mapper adds an Okta-style, provider-neutral profile mapping layer
 
 Install it as a normal Pelican plugin and run Pelican's plugin migrations. In the admin panel open **Attribute Mappings**, create a mapping, and select:
 
-1. a currently registered provider or `*`;
+1. a currently registered and enabled provider;
 2. a dot-separated source path such as `pelican_limits.cpu`;
 3. a currently registered, identity-writable target;
 4. `preserve` (the safe default) or `clear` for a missing claim.
 
-Mappings store provider and target **IDs**, never PHP callables/classes. A missing provider or target does not delete the row: it is displayed as unavailable and skipped until it returns. New mappings can only select targets registered during the current process.
+Mappings store provider and target **IDs**, never PHP callables/classes. Each mapping belongs to one identity provider because providers may expose different claim schemas. A missing provider or target does not delete the row, and new mappings can only select enabled providers and targets registered during the current process.
+
+Legacy rows whose provider is `*` remain in the database until an administrator explicitly removes them from the mapping page. They are not shown as a provider choice and are not executed during login; the editor never copies or silently reinterprets them.
 
 ## Claim and type semantics
 
@@ -112,7 +114,7 @@ create four mappings from each `pelican_limits.*` path to its corresponding UCS 
 
 ## Troubleshooting and manual regression test
 
-1. Verify the provider is enabled in Pelican and the mapping provider ID matches (or use `*`).
+1. Verify the provider is enabled in Pelican and the mapping provider ID matches exactly.
 2. Verify the target is not labelled unavailable and the mapping is enabled.
 3. Sign in through the provider; do not test by calling the callback without a completed Socialite flow.
 4. Inspect application logs for mapping ID, user ID, provider, source path, target key, and result. Values are intentionally omitted.

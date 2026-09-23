@@ -14,13 +14,15 @@ class ManageAttributeMappings extends Page
     protected static string $resource = AttributeMappingResource::class;
     protected string $view = 'user-attribute-mapper::filament.admin.resources.attribute-mappings.pages.manage-attribute-mappings';
 
-    public string $provider = '*';
+    public string $provider = '';
     /** @var array<string, string> */
     public array $providerOptions = [];
     /** @var array<string, array<int, array<string, mixed>>> */
     public array $groups = [];
     /** @var array<int, array<string, mixed>> */
     public array $unavailable = [];
+    /** @var array<int, array{id: int, source_claim: string, target_attribute: string}> */
+    public array $legacyMappings = [];
 
     public function getTitle(): string
     {
@@ -34,18 +36,21 @@ class ManageAttributeMappings extends Page
 
     public function mount(OAuthProviderResolver $providers, ProfileMappingWorkspace $workspace): void
     {
-        $available = $providers->options();
-        $historical = AttributeMapping::query()->distinct()->pluck('provider')->all();
-        $this->providerOptions = ['*' => 'All OAuth Providers'] + $available;
-        foreach ($historical as $provider) {
-            if (!isset($this->providerOptions[$provider])) $this->providerOptions[$provider] = $provider.' (unavailable)';
+        $this->providerOptions = $providers->options();
+        $this->provider = (string) (array_key_first($this->providerOptions) ?? '');
+        $this->loadLegacyMappings();
+
+        if ($this->provider !== '') {
+            $this->loadMappings($workspace);
         }
-        $this->loadMappings($workspace);
     }
 
-    public function changeProvider(string $provider, ProfileMappingWorkspace $workspace): void
+    public function changeProvider(string $provider, OAuthProviderResolver $providers, ProfileMappingWorkspace $workspace): void
     {
-        if (!array_key_exists($provider, $this->providerOptions)) return;
+        $available = $providers->options();
+        if (!array_key_exists($provider, $available)) return;
+
+        $this->providerOptions = $available;
         $this->provider = $provider;
         $this->loadMappings($workspace);
         $this->dispatch('mapping-workspace-saved');
@@ -82,12 +87,27 @@ class ManageAttributeMappings extends Page
         $this->unavailable = array_values($this->unavailable);
     }
 
-    public function save(ProfileMappingWorkspace $workspace): void
+    public function save(OAuthProviderResolver $providers, ProfileMappingWorkspace $workspace): void
     {
+        $available = $providers->options();
+        if ($this->provider === '' || !array_key_exists($this->provider, $available)) {
+            Notification::make()->title('Select an enabled identity provider')->danger()->send();
+
+            return;
+        }
+
+        $this->providerOptions = $available;
         $workspace->save($this->provider, $this->groups, $this->unavailable);
         $this->loadMappings($workspace);
         $this->dispatch('mapping-workspace-saved');
         Notification::make()->title('Mappings saved')->success()->send();
+    }
+
+    public function removeLegacyMapping(int $id): void
+    {
+        AttributeMapping::query()->where('provider', '*')->whereKey($id)->delete();
+        $this->loadLegacyMappings();
+        Notification::make()->title('Legacy global mapping removed')->success()->send();
     }
 
     private function loadMappings(ProfileMappingWorkspace $workspace): void
@@ -95,5 +115,16 @@ class ManageAttributeMappings extends Page
         $state = $workspace->load($this->provider);
         $this->groups = $state['groups'];
         $this->unavailable = $state['unavailable'];
+    }
+
+    private function loadLegacyMappings(): void
+    {
+        $this->legacyMappings = AttributeMapping::query()->where('provider', '*')->orderBy('id')
+            ->get(['id', 'source_claim', 'target_attribute'])
+            ->map(fn (AttributeMapping $mapping): array => [
+                'id' => $mapping->id,
+                'source_claim' => $mapping->source_claim,
+                'target_attribute' => $mapping->target_attribute,
+            ])->all();
     }
 }

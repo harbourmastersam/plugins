@@ -83,7 +83,22 @@ it('toggles only the staged enabled state and retains its source claim', functio
     expect($page->groups['Pelican'][0]['mappings'][0]['enabled'])->toBeTrue();
 });
 
-it('loads, creates, updates, clears and isolates provider mappings including wildcard mappings', function (): void {
+it('does not toggle an unmapped row', function (): void {
+    $page = new \Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+    $page->groups = ['Pelican' => [['mappings' => [[
+        'source_claim' => '', 'enabled' => true, 'priority' => 25,
+        'description' => 'Unchanged', 'missing_claim_behavior' => 'clear',
+    ]]]]];
+
+    $page->toggleMappingEnabled('Pelican', 0, 0);
+
+    expect($page->groups['Pelican'][0]['mappings'][0])->toMatchArray([
+        'source_claim' => '', 'enabled' => true, 'priority' => 25,
+        'description' => 'Unchanged', 'missing_claim_behavior' => 'clear',
+    ]);
+});
+
+it('loads, creates, updates, clears and isolates provider mappings', function (): void {
     $workspace = profileWorkspace();
     AttributeMapping::create([
         'provider' => 'authentik', 'source_claim' => 'old_name', 'target_attribute' => 'pelican.username',
@@ -121,11 +136,71 @@ it('loads, creates, updates, clears and isolates provider mappings including wil
     $workspace->save('authentik', $state['groups'], $state['unavailable']);
     expect(AttributeMapping::where('provider', 'authentik')->where('target_attribute', 'pelican.email')->exists())->toBeFalse();
 
-    $wildcard = $workspace->load('*');
-    $timezone = collect($wildcard['groups']['Pelican'])->search(fn (array $row) => $row['key'] === 'pelican.timezone');
-    $wildcard['groups']['Pelican'][$timezone]['mappings'][0]['source_claim'] = 'zoneinfo';
-    $workspace->save('*', $wildcard['groups'], $wildcard['unavailable']);
-    expect(AttributeMapping::where('provider', '*')->where('source_claim', 'zoneinfo')->exists())->toBeTrue();
+});
+
+it('rejects wildcard saves without deleting legacy wildcard records', function (): void {
+    $workspace = profileWorkspace();
+    $legacy = AttributeMapping::create([
+        'provider' => '*', 'source_claim' => 'legacy_name', 'target_attribute' => 'pelican.username',
+        'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100,
+    ]);
+
+    $state = $workspace->load('*');
+
+    expect(fn () => $workspace->save('*', $state['groups'], $state['unavailable']))
+        ->toThrow(\InvalidArgumentException::class)
+        ->and($legacy->fresh())->not->toBeNull();
+});
+
+it('selects only resolver options and defaults to the first enabled provider', function (): void {
+    AttributeMapping::create([
+        'provider' => 'removed', 'source_claim' => 'old', 'target_attribute' => 'pelican.username',
+        'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100,
+    ]);
+    $providers = Mockery::mock(\Boy132\UserAttributeMapper\OAuth\OAuthProviderResolver::class);
+    $providers->shouldReceive('options')->once()->andReturn(['staff' => 'Staff', 'port' => 'Port']);
+    $page = new \Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+
+    $page->mount($providers, profileWorkspace());
+
+    expect($page->providerOptions)->toBe(['staff' => 'Staff', 'port' => 'Port'])
+        ->and($page->provider)->toBe('staff')
+        ->and($page->providerOptions)->not->toHaveKey('*')
+        ->and($page->providerOptions)->not->toHaveKey('removed');
+});
+
+it('keeps an empty workspace when no identity providers are enabled', function (): void {
+    $providers = Mockery::mock(\Boy132\UserAttributeMapper\OAuth\OAuthProviderResolver::class);
+    $providers->shouldReceive('options')->once()->andReturn([]);
+    $page = new \Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+
+    $page->mount($providers, profileWorkspace());
+
+    expect($page->provider)->toBe('')->and($page->providerOptions)->toBe([])
+        ->and($page->groups)->toBe([])->and($page->unavailable)->toBe([]);
+});
+
+it('switches between independent provider workspaces', function (): void {
+    foreach ([['staff', 'staff_username'], ['port', 'port_username']] as [$provider, $claim]) {
+        AttributeMapping::create([
+            'provider' => $provider, 'source_claim' => $claim, 'target_attribute' => 'pelican.username',
+            'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100,
+        ]);
+    }
+    $providers = Mockery::mock(\Boy132\UserAttributeMapper\OAuth\OAuthProviderResolver::class);
+    $providers->shouldReceive('options')->twice()->andReturn(['staff' => 'Staff', 'port' => 'Port']);
+    $workspace = profileWorkspace();
+    $page = new \Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+    $page->mount($providers, $workspace);
+
+    $staffUsername = collect($page->groups['Pelican'])->firstWhere('key', 'pelican.username');
+    expect($staffUsername['mappings'][0]['source_claim'])->toBe('staff_username');
+
+    $page->changeProvider('port', $providers, $workspace);
+    $portUsername = collect($page->groups['Pelican'])->firstWhere('key', 'pelican.username');
+    expect($page->provider)->toBe('port')
+        ->and($portUsername['mappings'][0]['source_claim'])->toBe('port_username')
+        ->and(AttributeMapping::where('provider', 'staff')->value('source_claim'))->toBe('staff_username');
 });
 
 it('preserves multiple priority mappings and exposes removable unavailable targets', function (): void {
