@@ -51,7 +51,8 @@ it('hydrates edits to an existing rendered claim input and persists them', funct
     $path = "groups.{$group}.rows.{$row}.mappings.0.source_value";
 
     $editor->assertSee('preferred_username')
-        ->assertSeeHtml('wire:model="'.$path.'"')
+        ->assertSeeHtml('class="fi-input')
+        ->assertSeeHtml('wire:model.blur="'.$path.'"')
         ->assertSet($path, 'preferred_username')
         ->set($path, 'username')
         ->assertSet($path, 'username')
@@ -67,7 +68,8 @@ it('hydrates a blank rendered claim input and creates its mapping', function ():
     [$group, $row] = mappingEditorIndexes($editor->get('groups'), 'pelican.email');
     $path = "groups.{$group}.rows.{$row}.mappings.0.source_value";
 
-    $editor->assertSeeHtml('wire:model="'.$path.'"')
+    $editor->assertSeeHtml('class="fi-input')
+        ->assertSeeHtml('wire:model.blur="'.$path.'"')
         ->assertSet($path, '')
         ->set($path, 'email')
         ->assertSet($path, 'email')
@@ -115,7 +117,7 @@ it('keeps display labels with spaces and punctuation out of binding paths', func
     foreach ($definitions as $index => $definition) {
         [$group, $row] = mappingEditorIndexes($editor->get('groups'), $definition->key);
         $path = "groups.{$group}.rows.{$row}.mappings.0.source_value";
-        $editor->assertSee($definition->group)->assertSeeHtml('wire:model="'.$path.'"')->set($path, "claim_{$index}");
+        $editor->assertSee($definition->group)->assertSeeHtml('wire:model.blur="'.$path.'"')->set($path, "claim_{$index}");
     }
     $editor->call('save');
 
