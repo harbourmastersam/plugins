@@ -48,11 +48,17 @@ it('builds target-driven dynamic groups and excludes read-only attributes', func
             'pelican.external_id',
             'pelican.language',
             'pelican.timezone',
+            'pelican.is_managed_externally',
         ])
         ->and(collect($state['groups']['Example Plugin'])->pluck('key')->all())->toBe(['example-plugin.foo'])
         ->and($state['groups']['Pelican'][0]['mappings'][0]['source_claim'])->toBe('')
         ->and($state['groups']['Pelican'][0]['nullable'])->toBeFalse()
         ->and($state['groups']['Pelican'][0]['clear_supported'])->toBeFalse()
+        ->and(collect($state['groups']['Pelican'])->firstWhere('key', 'pelican.is_managed_externally'))->toMatchArray([
+            'type' => 'boolean',
+            'nullable' => false,
+            'clear_supported' => false,
+        ])
         ->and($state['groups']['Example Plugin'][0]['nullable'])->toBeTrue()
         ->and($state['groups']['Example Plugin'][0]['clear_supported'])->toBeTrue();
 });

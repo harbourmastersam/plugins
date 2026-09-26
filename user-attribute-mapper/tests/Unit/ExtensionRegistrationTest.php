@@ -24,6 +24,7 @@ class ExtensionRegistrationTest extends TestCase
             'pelican.external_id',
             'pelican.language',
             'pelican.timezone',
+            'pelican.is_managed_externally',
         ], $registry->writableFromIdentity()->keys()->all());
         self::assertArrayHasKey('Pelican', AttributeMappingResource::targetAttributeOptions($registry));
     }

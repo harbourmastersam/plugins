@@ -37,6 +37,7 @@ final class InspectUserAttributeRegistryCommand extends Command
             'pelican.external_id',
             'pelican.language',
             'pelican.timezone',
+            'pelican.is_managed_externally',
         ];
 
         if ($this->option('require-ucs')) {

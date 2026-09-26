@@ -26,10 +26,31 @@ Supported types are string, integer, float, boolean, array, and object. Conversi
 The runtime registry is the security boundary. Administrators cannot enter model classes, columns, methods, or expressions. Attributes default to not identity-writable; their owner must provide a writer and opt in. `sensitive` and `privileged` metadata is available to UIs, and raw values, tokens, authorization codes, refresh tokens, and secrets are never logged or persisted. The mapper neither decodes tokens nor performs a second user-info/token request.
 
 The mapper itself explicitly registers the safe Pelican profile fields `username`,
-`email`, `external_id`, `language`, and `timezone` as identity-writable. User `id`
-and `uuid` are available read-only. This is an allowlist: authentication secrets,
-administrator state, roles, permissions, and arbitrary model columns are never
-exposed.
+`email`, `external_id`, `language`, `timezone`, and `is_managed_externally` as
+identity-writable. User `id` and `uuid` are available read-only. This is an
+allowlist: authentication secrets, administrator state, roles, permissions, and
+arbitrary model columns are never exposed.
+
+External ID does not automatically imply that a user is externally managed. To
+enable that Pelican behavior, an administrator must explicitly map a boolean
+source claim to `pelican.is_managed_externally`. For example, an identity provider
+might supply:
+
+```json
+{
+    "preferred_username": "sam@greyharbour.net",
+    "email": "sam@greyharbour.net",
+    "sub": "ffa82db64a2e474addde9d6d8c021a56deb55015399eff99c982f6",
+    "pelican_managed": true
+}
+```
+
+The corresponding mappings can be `preferred_username` → `pelican.username`,
+`email` → `pelican.email`, `sub` → `pelican.external_id`, and `pelican_managed` →
+`pelican.is_managed_externally`. The `pelican_managed` claim name is only an
+example; the implementation is provider-neutral. A present `false` value
+explicitly disables externally managed status, while an absent claim follows the
+mapping's configured missing-claim behavior.
 
 ## OAuth compatibility and internals
 
@@ -52,7 +73,7 @@ php artisan optimize:clear
 php artisan p:user-attribute-mapper:inspect --require-ucs
 ```
 
-`--require-ucs` validates the combined runtime integration—mapper plus bridge plus official UCS—not native registration by UCS. It requires the five writable Pelican attributes and four bridge-provided UCS attributes (nine writable definitions total). Use `php artisan plugin:list`, where available, to independently confirm all three plugins are enabled and loadable. Restart long-lived workers/PHP-FPM after replacing installed plugin files; `optimize:clear` does not restart them.
+`--require-ucs` validates the combined runtime integration—mapper plus bridge plus official UCS—not native registration by UCS. It requires the six writable Pelican attributes and four bridge-provided UCS attributes (ten writable definitions total). Use `php artisan plugin:list`, where available, to independently confirm all three plugins are enabled and loadable. Restart long-lived workers/PHP-FPM after replacing installed plugin files; `optimize:clear` does not restart them.
 
 ## Troubleshooting and manual regression test
 

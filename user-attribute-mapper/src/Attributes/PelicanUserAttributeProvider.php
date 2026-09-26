@@ -35,6 +35,26 @@ final class PelicanUserAttributeProvider
             ));
         }
 
+        $registry->register(new UserAttributeDefinition(
+            key: 'pelican.is_managed_externally',
+            owner: 'pelican',
+            label: 'Is Managed Externally',
+            type: AttributeType::Boolean,
+            reader: fn (User $user): bool => (bool) $user->is_managed_externally,
+            writer: fn (User $user, bool $value) => $this->write(
+                $user,
+                'is_managed_externally',
+                $value,
+                ['required', 'boolean'],
+            ),
+            description: "Whether Pelican treats this user's identity as externally managed. When enabled, Pelican prevents the user from changing externally managed identity fields such as username, email, and password.",
+            group: 'Pelican',
+            nullable: false,
+            writableFromIdentity: true,
+            sensitive: false,
+            privileged: false,
+        ));
+
         foreach (['id' => 'ID', 'uuid' => 'UUID'] as $field => $label) {
             $registry->register(new UserAttributeDefinition(
                 key: "pelican.$field",
@@ -49,7 +69,7 @@ final class PelicanUserAttributeProvider
     }
 
     /** @param array<int, mixed> $fallbackRules */
-    private function write(User $user, string $field, ?string $value, array $fallbackRules): void
+    private function write(User $user, string $field, mixed $value, array $fallbackRules): void
     {
         $rules = $fallbackRules;
 
