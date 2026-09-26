@@ -7,7 +7,7 @@ User Attribute Mapper adds an Okta-style, provider-neutral profile mapping layer
 Install it as a normal Pelican plugin and run Pelican's plugin migrations. In the admin panel open **Attribute Mappings**, create a mapping, and select:
 
 1. a currently registered and enabled provider;
-2. a dot-separated source path such as `pelican_limits.cpu`;
+2. a source type and either a dot-separated claim path such as `pelican_limits.cpu` or a static text value;
 3. a currently registered, identity-writable target;
 4. `preserve` (the safe default) or `clear` for a missing claim.
 
@@ -20,6 +20,21 @@ Legacy rows whose provider is `*` remain in the database until an administrator 
 Nested arrays/objects use literal dot-separated paths. Absent, `null`, `false`, `0`, and `""` are distinct. An absent claim preserves the existing value by default. `clear` only works when the owner supplied a clearer; otherwise it also preserves the value.
 
 Supported types are string, integer, float, boolean, array, and object. Conversion is deliberately strict: `"800"` is an integer and `"true"`/`"false"` are booleans, while `"hello"` cannot become integer `0`. The owner supplies Laravel validation rules after conversion. Invalid input, unavailable adapters, and writer failures are logged without values and do not block login.
+
+## Mapping sources
+
+Every mapping explicitly uses one of two source types:
+
+- **Identity Provider Claim** reads a claim or dot-separated path from the authenticating provider.
+- **Static Value** supplies the same configured text on every successful login through the mapping's selected provider. The target type still controls conversion, validation, and writing.
+
+Sources remain provider-scoped. For example, `Static true` configured for **Staff** runs only for a Staff login; it does not run for **Port** or any other provider. Claim mappings such as `preferred_username` → `pelican.username`, `email` → `pelican.email`, and `sub` → `pelican.external_id` continue to work unchanged.
+
+### Marking an IdP-managed user as externally managed
+
+For an Authentik provider, configure `Static Value` with source value `true` and target `pelican.is_managed_externally`. At login, the existing `AttributeValueConverter` converts the text `"true"` to boolean `true` before target validation and writing. Authentik does not need to emit a redundant `pelican_managed` claim.
+
+Static values are stored as mapper configuration in the database and are visible to administrators. **Do not use them for passwords, tokens, API secrets, private keys, credentials, or other secrets.** The target registry remains the security boundary: static sources cannot bypass target registration, `writableFromIdentity`, target types, validation, privileged/sensitive metadata, or writer callbacks.
 
 ## Security model
 
