@@ -1,8 +1,8 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Events;
+namespace HarbourmasterSam\UserAttributeMapper\Events;
 
-use Boy132\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
+use HarbourmasterSam\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
 
 final class RegisterUserAttributes
 {

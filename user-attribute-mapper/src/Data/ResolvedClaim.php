@@ -1,6 +1,6 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Data;
+namespace HarbourmasterSam\UserAttributeMapper\Data;
 
 final readonly class ResolvedClaim
 {

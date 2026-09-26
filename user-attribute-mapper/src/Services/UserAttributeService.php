@@ -1,9 +1,9 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Services;
+namespace HarbourmasterSam\UserAttributeMapper\Services;
 
 use App\Models\User;
-use Boy132\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
+use HarbourmasterSam\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
 use Illuminate\Support\Facades\Validator;
 use InvalidArgumentException;
 

@@ -1,11 +1,11 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Attributes;
+namespace HarbourmasterSam\UserAttributeMapper\Attributes;
 
 use App\Models\User;
-use Boy132\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
-use Boy132\UserAttributeMapper\Data\UserAttributeDefinition;
-use Boy132\UserAttributeMapper\Enums\AttributeType;
+use HarbourmasterSam\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
+use HarbourmasterSam\UserAttributeMapper\Data\UserAttributeDefinition;
+use HarbourmasterSam\UserAttributeMapper\Enums\AttributeType;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 

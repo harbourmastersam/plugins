@@ -1,15 +1,15 @@
 <?php
 
 use App\Models\User;
-use Boy132\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
-use Boy132\UserAttributeMapper\Data\UserAttributeDefinition;
-use Boy132\UserAttributeMapper\Enums\AttributeType;
-use Boy132\UserAttributeMapper\Enums\MappingSourceType;
-use Boy132\UserAttributeMapper\Models\AttributeMapping;
-use Boy132\UserAttributeMapper\Services\AttributeMappingService;
-use Boy132\UserAttributeMapper\Services\AttributeValueConverter;
-use Boy132\UserAttributeMapper\Services\ClaimPathResolver;
-use Boy132\UserAttributeMapper\Services\UserAttributeService;
+use HarbourmasterSam\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
+use HarbourmasterSam\UserAttributeMapper\Data\UserAttributeDefinition;
+use HarbourmasterSam\UserAttributeMapper\Enums\AttributeType;
+use HarbourmasterSam\UserAttributeMapper\Enums\MappingSourceType;
+use HarbourmasterSam\UserAttributeMapper\Models\AttributeMapping;
+use HarbourmasterSam\UserAttributeMapper\Services\AttributeMappingService;
+use HarbourmasterSam\UserAttributeMapper\Services\AttributeValueConverter;
+use HarbourmasterSam\UserAttributeMapper\Services\ClaimPathResolver;
+use HarbourmasterSam\UserAttributeMapper\Services\UserAttributeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

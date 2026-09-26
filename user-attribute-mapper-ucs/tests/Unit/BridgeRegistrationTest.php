@@ -11,6 +11,6 @@ it('registers its string listener without loading either optional plugin', funct
     (new UserAttributeMapperUcsPluginProvider($container))->register();
 
     expect($container['events']->getListeners(
-        'Boy132\\UserAttributeMapper\\Events\\RegisterUserAttributes',
+        'HarbourmasterSam\\UserAttributeMapper\\Events\\RegisterUserAttributes',
     ))->toHaveCount(1);
 });

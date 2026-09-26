@@ -1,10 +1,10 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Listeners;
+namespace HarbourmasterSam\UserAttributeMapper\Listeners;
 
 use App\Models\User;
-use Boy132\UserAttributeMapper\OAuth\OAuthClaimContext;
-use Boy132\UserAttributeMapper\Services\AttributeMappingService;
+use HarbourmasterSam\UserAttributeMapper\OAuth\OAuthClaimContext;
+use HarbourmasterSam\UserAttributeMapper\Services\AttributeMappingService;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Log;
 use Throwable;

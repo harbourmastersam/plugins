@@ -2,9 +2,9 @@
 
 namespace HarbourmasterSam\UserAttributeMapperUcs\Attributes;
 
-use Boy132\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
-use Boy132\UserAttributeMapper\Data\UserAttributeDefinition;
-use Boy132\UserAttributeMapper\Enums\AttributeType;
+use HarbourmasterSam\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
+use HarbourmasterSam\UserAttributeMapper\Data\UserAttributeDefinition;
+use HarbourmasterSam\UserAttributeMapper\Enums\AttributeType;
 use Boy132\UserCreatableServers\Models\UserResourceLimits;
 
 final class UserCreatableServersAttributeProvider

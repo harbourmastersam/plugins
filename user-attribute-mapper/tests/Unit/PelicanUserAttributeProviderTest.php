@@ -1,10 +1,10 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Tests\Unit;
+namespace HarbourmasterSam\UserAttributeMapper\Tests\Unit;
 
-use Boy132\UserAttributeMapper\Attributes\PelicanUserAttributeProvider;
-use Boy132\UserAttributeMapper\Enums\AttributeType;
-use Boy132\UserAttributeMapper\Services\UserAttributeRegistry;
+use HarbourmasterSam\UserAttributeMapper\Attributes\PelicanUserAttributeProvider;
+use HarbourmasterSam\UserAttributeMapper\Enums\AttributeType;
+use HarbourmasterSam\UserAttributeMapper\Services\UserAttributeRegistry;
 use PHPUnit\Framework\TestCase;
 
 class PelicanUserAttributeProviderTest extends TestCase

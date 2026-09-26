@@ -1,12 +1,12 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Tests\Unit;
+namespace HarbourmasterSam\UserAttributeMapper\Tests\Unit;
 
-use Boy132\UserAttributeMapper\Data\UserAttributeDefinition;
-use Boy132\UserAttributeMapper\Enums\AttributeType;
-use Boy132\UserAttributeMapper\Services\AttributeValueConverter;
-use Boy132\UserAttributeMapper\Services\ClaimPathResolver;
-use Boy132\UserAttributeMapper\Services\UserAttributeRegistry;
+use HarbourmasterSam\UserAttributeMapper\Data\UserAttributeDefinition;
+use HarbourmasterSam\UserAttributeMapper\Enums\AttributeType;
+use HarbourmasterSam\UserAttributeMapper\Services\AttributeValueConverter;
+use HarbourmasterSam\UserAttributeMapper\Services\ClaimPathResolver;
+use HarbourmasterSam\UserAttributeMapper\Services\UserAttributeRegistry;
 use InvalidArgumentException;
 use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;

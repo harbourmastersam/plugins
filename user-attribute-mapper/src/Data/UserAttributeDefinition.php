@@ -1,9 +1,9 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Data;
+namespace HarbourmasterSam\UserAttributeMapper\Data;
 
 use App\Models\User;
-use Boy132\UserAttributeMapper\Enums\AttributeType;
+use HarbourmasterSam\UserAttributeMapper\Enums\AttributeType;
 use Closure;
 use InvalidArgumentException;
 

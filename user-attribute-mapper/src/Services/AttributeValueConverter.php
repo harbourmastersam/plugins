@@ -1,8 +1,8 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Services;
+namespace HarbourmasterSam\UserAttributeMapper\Services;
 
-use Boy132\UserAttributeMapper\Enums\AttributeType;
+use HarbourmasterSam\UserAttributeMapper\Enums\AttributeType;
 use InvalidArgumentException;
 use stdClass;
 

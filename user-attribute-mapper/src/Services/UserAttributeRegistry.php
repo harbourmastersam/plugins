@@ -1,9 +1,9 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Services;
+namespace HarbourmasterSam\UserAttributeMapper\Services;
 
-use Boy132\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
-use Boy132\UserAttributeMapper\Data\UserAttributeDefinition;
+use HarbourmasterSam\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
+use HarbourmasterSam\UserAttributeMapper\Data\UserAttributeDefinition;
 use Illuminate\Support\Collection;
 use LogicException;
 

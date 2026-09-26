@@ -1,11 +1,11 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Tests\Unit;
+namespace HarbourmasterSam\UserAttributeMapper\Tests\Unit;
 
-use Boy132\UserAttributeMapper\Attributes\PelicanUserAttributeProvider;
-use Boy132\UserAttributeMapper\Events\RegisterUserAttributes;
-use Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\AttributeMappingResource;
-use Boy132\UserAttributeMapper\Services\UserAttributeRegistry;
+use HarbourmasterSam\UserAttributeMapper\Attributes\PelicanUserAttributeProvider;
+use HarbourmasterSam\UserAttributeMapper\Events\RegisterUserAttributes;
+use HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\AttributeMappingResource;
+use HarbourmasterSam\UserAttributeMapper\Services\UserAttributeRegistry;
 use Illuminate\Events\Dispatcher;
 use PHPUnit\Framework\TestCase;
 
