@@ -23,7 +23,7 @@ class ManageAttributeMappings extends Page
     public string $provider = '';
     /** @var array<string, string> */
     public array $providerOptions = [];
-    /** @var array<string, array<int, array<string, mixed>>> */
+    /** @var list<array{key: string, label: string, rows: array<int, array<string, mixed>>}> */
     public array $groups = [];
     /** @var array<int, array<string, mixed>> */
     public array $unavailable = [];
@@ -77,59 +77,61 @@ class ManageAttributeMappings extends Page
         $this->dispatch('mapping-workspace-saved');
     }
 
-    public function addMapping(string $group, int $row, ProfileMappingWorkspace $workspace): void
+    public function addMapping(int $group, int $row, ProfileMappingWorkspace $workspace): void
     {
-        $priorities = array_column($this->groups[$group][$row]['mappings'], 'priority');
+        $priorities = array_column($this->groups[$group]['rows'][$row]['mappings'], 'priority');
         $state = $workspace->emptyMappingState();
         $state['priority'] = ($priorities === [] ? 0 : max(array_map('intval', $priorities))) + 10;
-        $this->groups[$group][$row]['mappings'][] = $state;
+        $this->groups[$group]['rows'][$row]['mappings'][] = $state;
     }
 
-    public function removeMapping(string $group, int $row, int $mapping): void
+    public function removeMapping(int $group, int $row, int $mapping): void
     {
-        unset($this->groups[$group][$row]['mappings'][$mapping]);
-        $this->groups[$group][$row]['mappings'] = array_values($this->groups[$group][$row]['mappings']);
-        if ($this->groups[$group][$row]['mappings'] === []) {
-            $this->groups[$group][$row]['mappings'][] = app(ProfileMappingWorkspace::class)->emptyMappingState();
+        unset($this->groups[$group]['rows'][$row]['mappings'][$mapping]);
+        $this->groups[$group]['rows'][$row]['mappings'] = array_values($this->groups[$group]['rows'][$row]['mappings']);
+        if ($this->groups[$group]['rows'][$row]['mappings'] === []) {
+            $this->groups[$group]['rows'][$row]['mappings'][] = app(ProfileMappingWorkspace::class)->emptyMappingState();
         }
     }
 
     /** Toggle a configured mapping in the staged workspace without persisting it. */
-    public function toggleMappingEnabled(string $group, int $row, int $mapping): void
+    public function toggleMappingEnabled(int $group, int $row, int $mapping): void
     {
-        if (!isset($this->groups[$group][$row]['mappings'][$mapping])) return;
+        if (!isset($this->groups[$group]['rows'][$row]['mappings'][$mapping])) return;
 
-        $state = &$this->groups[$group][$row]['mappings'][$mapping];
+        $state = &$this->groups[$group]['rows'][$row]['mappings'][$mapping];
         if (!array_key_exists('source_value', $state) || strlen((string) $state['source_value']) === 0) return;
 
         $state['enabled'] = !(bool) ($state['enabled'] ?? true);
     }
 
     /** Change a staged source kind, clearing its value to avoid silently reinterpreting it. */
-    public function changeMappingSourceType(string $group, int $row, int $mapping, string $sourceType): void
+    public function changeMappingSourceType(int $group, int $row, int $mapping, string $sourceType): void
     {
         $type = MappingSourceType::tryFrom($sourceType);
-        if ($type === null || !isset($this->groups[$group][$row]['mappings'][$mapping])) return;
+        if ($type === null || !isset($this->groups[$group]['rows'][$row]['mappings'][$mapping])) return;
 
-        $state = &$this->groups[$group][$row]['mappings'][$mapping];
+        $state = &$this->groups[$group]['rows'][$row]['mappings'][$mapping];
+        if (($state['source_type'] ?? MappingSourceType::Claim->value) === $type->value) return;
+
         $state['source_type'] = $type->value;
         $state['source_value'] = '';
     }
 
-    public function addTransformation(string $group, int $row, int $mapping): void
+    public function addTransformation(int $group, int $row, int $mapping): void
     {
-        $this->groups[$group][$row]['mappings'][$mapping]['transforms'][] = ['_ui_key' => (string) Str::uuid(), 'type' => 'trim'];
+        $this->groups[$group]['rows'][$row]['mappings'][$mapping]['transforms'][] = ['_ui_key' => (string) Str::uuid(), 'type' => 'trim'];
     }
 
-    public function removeTransformation(string $group, int $row, int $mapping, int $transform): void
+    public function removeTransformation(int $group, int $row, int $mapping, int $transform): void
     {
-        unset($this->groups[$group][$row]['mappings'][$mapping]['transforms'][$transform]);
-        $this->groups[$group][$row]['mappings'][$mapping]['transforms'] = array_values($this->groups[$group][$row]['mappings'][$mapping]['transforms']);
+        unset($this->groups[$group]['rows'][$row]['mappings'][$mapping]['transforms'][$transform]);
+        $this->groups[$group]['rows'][$row]['mappings'][$mapping]['transforms'] = array_values($this->groups[$group]['rows'][$row]['mappings'][$mapping]['transforms']);
     }
 
-    public function moveTransformation(string $group, int $row, int $mapping, int $transform, int $direction): void
+    public function moveTransformation(int $group, int $row, int $mapping, int $transform, int $direction): void
     {
-        $items = &$this->groups[$group][$row]['mappings'][$mapping]['transforms'];
+        $items = &$this->groups[$group]['rows'][$row]['mappings'][$mapping]['transforms'];
         $destination = $transform + $direction;
         if (!isset($items[$transform], $items[$destination])) return;
         [$items[$transform], $items[$destination]] = [$items[$destination], $items[$transform]];
@@ -152,7 +154,7 @@ class ManageAttributeMappings extends Page
 
         $this->providerOptions = $available;
         try {
-            $workspace->save($this->provider, $this->groups, $this->unavailable);
+            $workspace->save($this->provider, $this->uiStateToWorkspaceState(), $this->unavailable);
         } catch (\InvalidArgumentException $exception) {
             Notification::make()->title('Mappings were not saved')->body($exception->getMessage())->danger()->send();
             return;
@@ -170,7 +172,7 @@ class ManageAttributeMappings extends Page
         try {
             $claims = json_decode($this->sampleClaims, true, 512, JSON_THROW_ON_ERROR);
             if (!is_array($claims) || array_is_list($claims)) throw new JsonException('Sample claims must be a JSON object.');
-            $this->previewResults = $preview->preview($this->groups, $claims);
+            $this->previewResults = $preview->preview($this->uiStateToWorkspaceState(), $claims);
         } catch (JsonException $exception) {
             $this->previewError = 'Invalid sample JSON: '.$exception->getMessage();
         }
@@ -191,8 +193,26 @@ class ManageAttributeMappings extends Page
     private function loadMappings(ProfileMappingWorkspace $workspace): void
     {
         $state = $workspace->load($this->provider);
-        $this->groups = $state['groups'];
+        $this->groups = $this->workspaceStateToUiState($state['groups']);
         $this->unavailable = $state['unavailable'];
+    }
+
+    /** @param array<string, array<int, array<string, mixed>>> $groups */
+    private function workspaceStateToUiState(array $groups): array
+    {
+        return collect($groups)->map(fn (array $rows, string $label): array => [
+            'key' => Str::slug($label),
+            'label' => $label,
+            'rows' => array_values($rows),
+        ])->values()->all();
+    }
+
+    /** @return array<string, array<int, array<string, mixed>>> */
+    private function uiStateToWorkspaceState(): array
+    {
+        return collect($this->groups)->mapWithKeys(fn (array $group): array => [
+            (string) $group['label'] => $group['rows'],
+        ])->all();
     }
 
     private function loadLegacyMappings(): void
