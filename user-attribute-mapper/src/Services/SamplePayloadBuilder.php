@@ -24,17 +24,28 @@ class SamplePayloadBuilder
             $path = trim((string) ($mapping['source_value'] ?? ''));
             if ($path === '' || $this->sensitive->isSensitivePath($path)) continue;
             $target = (string) ($row['key'] ?? '');
-            $entries[$path] = $this->sampleValue($target, $types[$path] ?? null);
+            $entries[$path] = ['value' => $this->sampleValue($target, $types[$path] ?? null), 'origin' => 'configured'];
         }
+        $allPaths = array_unique([...array_keys($entries), ...array_keys($types)]);
         if ($includeAllDiscovered) foreach ($types as $path => $type) {
-            $hasChild = collect(array_keys($types))->contains(fn (string $candidate): bool => str_starts_with($candidate, $path.'.'));
-            if (!isset($entries[$path]) && !($type === 'object' && $hasChild) && !$this->sensitive->isSensitivePath($path)) $entries[$path] = $this->sampleValue('', $type);
+            $hasChild = collect($allPaths)->contains(fn (string $candidate): bool => str_starts_with($candidate, $path.'.'));
+            if (!isset($entries[$path]) && !$hasChild && !$this->sensitive->isSensitivePath($path)) {
+                $entries[$path] = ['value' => $this->sampleValue('', $type), 'origin' => 'discovered'];
+            }
         }
 
         $payload = [];
-        foreach ($entries as $path => $value) {
-            $conflict = $this->insert($payload, $path, $value);
-            if ($conflict !== null) return ['payload' => $payload, 'warning' => "Cannot generate sample payload because claim paths [{$conflict[0]}] and [{$conflict[1]}] conflict."];
+        foreach ($entries as $path => $entry) {
+            $conflict = $this->insert($payload, $path, $entry['value']);
+            if ($conflict !== null) {
+                $scalarPath = $conflict[0];
+                $nestedPath = $conflict[1] === $scalarPath
+                    ? collect(array_keys($entries))->first(fn (string $candidate): bool => str_starts_with($candidate, $scalarPath.'.'), $path)
+                    : $conflict[1];
+                $origin = $entries[$scalarPath]['origin'] ?? 'configured';
+
+                return ['payload' => $payload, 'warning' => "Cannot generate sample payload because {$origin} claim path [{$scalarPath}] is scalar, but [{$nestedPath}] requires [{$scalarPath}] to be an object."];
+            }
         }
         return ['payload' => $payload, 'warning' => null];
     }

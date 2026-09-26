@@ -53,5 +53,38 @@ it('reports scalar and nested path collisions without silently overwriting', fun
     $result = sampleBuilder()->build('p', sampleGroups([
         sampleRow('pelican.username', 'claim', 'foo'), sampleRow('pelican.email', 'claim', 'foo.bar'),
     ]));
-    expect($result['warning'])->toContain('[foo]', '[foo.bar]');
+    expect($result['warning'])->toBe('Cannot generate sample payload because configured claim path [foo] is scalar, but [foo.bar] requires [foo] to be an object.');
+});
+
+it('treats discovered parents as structural containers regardless of their observed type', function (string $parentType): void {
+    $now = now();
+    foreach (['limits' => $parentType, 'limits.cpu' => 'integer', 'limits.memory' => 'integer'] as $path => $type) {
+        DiscoveredClaim::create(['provider' => 'p', 'claim_path' => $path, 'claim_type' => $type, 'first_seen_at' => $now, 'last_seen_at' => $now]);
+    }
+
+    $result = sampleBuilder()->build('p', [], true);
+
+    expect($result['warning'])->toBeNull()
+        ->and($result['payload'])->toBe(['limits' => ['cpu' => 1, 'memory' => 1]])
+        ->and($result['payload']['limits']['cpu'])->toBeInt();
+})->with(['object parent' => 'object', 'mixed parent' => 'mixed', 'null parent' => 'null']);
+
+it('includes discovered leaves while skipping a discovered parent of configured children', function (): void {
+    $now = now();
+    foreach (['pelican_limits' => 'mixed', 'pelican_limits.cpu' => 'integer', 'pelican_limits.memory' => 'integer', 'pelican_limits.disk' => 'integer', 'pelican_limits.server_limit' => 'integer', 'language' => 'string'] as $path => $type) {
+        DiscoveredClaim::create(['provider' => 'p', 'claim_path' => $path, 'claim_type' => $type, 'first_seen_at' => $now, 'last_seen_at' => $now]);
+    }
+    $groups = sampleGroups([
+        sampleRow('user-creatable-servers.cpu', 'claim', 'pelican_limits.cpu'),
+        sampleRow('user-creatable-servers.memory', 'claim', 'pelican_limits.memory'),
+        sampleRow('user-creatable-servers.disk', 'claim', 'pelican_limits.disk'),
+        sampleRow('user-creatable-servers.server_limit', 'claim', 'pelican_limits.server_limit'),
+    ]);
+
+    $result = sampleBuilder()->build('p', $groups, true);
+
+    expect($result['warning'])->toBeNull()->and($result['payload'])->toBe([
+        'pelican_limits' => ['cpu' => 1, 'memory' => 1, 'disk' => 1, 'server_limit' => 1],
+        'language' => 'example',
+    ]);
 });
