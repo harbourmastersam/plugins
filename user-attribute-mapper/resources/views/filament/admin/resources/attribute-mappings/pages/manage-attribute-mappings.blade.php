@@ -115,14 +115,21 @@
                                         </x-filament::input.select>
                                     </x-filament::input.wrapper>
                                     <x-filament::input.wrapper>
+                                        @if ($isStatic && $row['type'] === 'boolean')
+                                        <x-filament::input.select id="source-{{ $modalId }}" wire:model.live="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"><option value="true">True</option><option value="false">False</option></x-filament::input.select>
+                                        @elseif ($isStatic && in_array($row['type'], ['array', 'object']))
+                                        <x-filament::input disabled value="Static values are unsupported for this target" />
+                                        @else
                                         <x-filament::input
                                             id="source-{{ $modalId }}"
-                                            type="text"
+                                            type="{{ $isStatic && in_array($row['type'], ['integer', 'float']) ? 'number' : 'text' }}"
+                                            @if ($isStatic && $row['type'] === 'integer') step="1" @elseif ($isStatic && $row['type'] === 'float') step="any" @endif
                                             maxlength="512"
                                             placeholder="{{ $isStatic ? 'Enter a static value…' : 'Choose an attribute or enter a claim path…' }}"
                                             aria-describedby="relationship-{{ $modalId }}"
                                             wire:model.live.debounce.300ms="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"
                                         />
+                                        @endif
                                     </x-filament::input.wrapper>
                                     </div>
                                 </div>
@@ -151,7 +158,7 @@
                                 <div class="uam-target">
                                     <div class="min-w-0">
                                         <div class="flex items-center gap-2">
-                                            <p class="uam-target-name">{{ $mappingIndex === 0 ? $row['label'] : 'Fallback for '.$row['label'] }}</p>
+                                            <p class="uam-target-name">{{ $mappingIndex === 0 ? $row['label'] : 'Fallback '.$mappingIndex.' for '.$row['label'] }}</p>
                                             <x-filament::dropdown placement="bottom-start">
                                                 <x-slot name="trigger">
                                                     <x-filament::icon-button icon="tabler-info-circle" size="sm" color="gray" label="Information about {{ $row['label'] }}" />
@@ -206,7 +213,9 @@
                                         <p class="font-mono text-xs text-gray-500 dark:text-gray-400">{{ $row['key'] }}</p>
                                         <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">Source: {{ $isStatic ? 'Static value' : ($mapping['source_value'] ?: 'Not mapped') }}</p>
                                     </div>
-                                    @if ($isStatic)
+                                    @if ($mappingIndex > 0)
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">Missing-value behaviour is controlled by the primary mapping.</p>
+                                    @elseif ($isStatic)
                                         <p class="text-sm text-gray-500 dark:text-gray-400">Static values are always present, so missing-claim behaviour does not apply.</p>
                                     @else
                                     <label class="block space-y-1.5 text-sm font-medium text-gray-950 dark:text-white">
@@ -222,6 +231,22 @@
                                             @unless ($row['clear_supported']) This target does not support clearing, so its existing value would be preserved. @endunless
                                         </span>
                                     </label>
+                                    @endif
+                                    @if ($row['type'] === 'string')
+                                    <div class="space-y-2">
+                                        <div class="flex items-center justify-between"><span class="text-sm font-medium">Transformations</span><x-filament::button size="xs" color="gray" wire:click="addTransformation({{ \Illuminate\Support\Js::from($group) }}, {{ $rowIndex }}, {{ $mappingIndex }})">Add transformation</x-filament::button></div>
+                                        <p class="text-xs text-gray-500">Applied in order before conversion. Only safe literal string operations are available.</p>
+                                        @foreach (($mapping['transforms'] ?? []) as $transformIndex => $transform)
+                                        <div class="grid grid-cols-[8rem,1fr,auto] gap-2" wire:key="transform-{{ $modalId }}-{{ $transformIndex }}">
+                                            <x-filament::input.select wire:model.live="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.transforms.{{ $transformIndex }}.type"><option value="trim">Trim</option><option value="lowercase">Lowercase</option><option value="uppercase">Uppercase</option><option value="prefix">Prefix</option><option value="suffix">Suffix</option><option value="replace">Replace</option></x-filament::input.select>
+                                            <div class="flex gap-2">
+                                                @if (in_array($transform['type'] ?? '', ['prefix', 'suffix']))<x-filament::input placeholder="Text" wire:model="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.transforms.{{ $transformIndex }}.value" />
+                                                @elseif (($transform['type'] ?? '') === 'replace')<x-filament::input placeholder="From" wire:model="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.transforms.{{ $transformIndex }}.from" /><x-filament::input placeholder="To" wire:model="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.transforms.{{ $transformIndex }}.to" />@endif
+                                            </div>
+                                            <div class="flex"><x-filament::icon-button icon="tabler-arrow-up" label="Move up" wire:click="moveTransformation({{ \Illuminate\Support\Js::from($group) }}, {{ $rowIndex }}, {{ $mappingIndex }}, {{ $transformIndex }}, -1)" /><x-filament::icon-button icon="tabler-arrow-down" label="Move down" wire:click="moveTransformation({{ \Illuminate\Support\Js::from($group) }}, {{ $rowIndex }}, {{ $mappingIndex }}, {{ $transformIndex }}, 1)" /><x-filament::icon-button icon="tabler-trash" color="danger" label="Remove" wire:click="removeTransformation({{ \Illuminate\Support\Js::from($group) }}, {{ $rowIndex }}, {{ $mappingIndex }}, {{ $transformIndex }})" /></div>
+                                        </div>
+                                        @endforeach
+                                    </div>
                                     @endif
                                     <label class="block space-y-1.5 text-sm font-medium text-gray-950 dark:text-white">
                                         <span>Priority</span>
@@ -301,8 +326,18 @@
         <div class="sticky bottom-4 z-10 mt-6 flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur dark:border-white/10 dark:bg-gray-900/95 sm:px-6">
             <p x-show="dirty" x-cloak class="flex items-center gap-2 text-sm font-medium text-warning-600 dark:text-warning-400"><span class="h-2 w-2 rounded-full bg-current"></span>Unsaved changes</p>
             <span x-show="! dirty" class="text-sm text-gray-500 dark:text-gray-400">Mappings are saved together for this provider.</span>
-            <x-filament::button icon="tabler-device-floppy" wire:click="save" wire:loading.attr="disabled">Save Mappings</x-filament::button>
+            <div class="flex gap-2"><x-filament::button color="gray" icon="tabler-flask" x-on:click="$dispatch('open-modal', { id: 'test-mappings' })">Test mappings</x-filament::button><x-filament::button icon="tabler-device-floppy" wire:click="save" wire:loading.attr="disabled">Save Mappings</x-filament::button></div>
         </div>
         @endif
+        <x-filament::modal id="test-mappings" width="3xl">
+            <x-slot name="heading">Test mappings</x-slot>
+            <x-slot name="description">This is a dry-run of source resolution, transformation, type conversion and declarative validation. Target-specific write-time validation may still apply during login.</x-slot>
+            <label class="block text-sm font-medium">Sample identity-provider claims<textarea class="mt-2 block min-h-48 w-full rounded-lg border-gray-300 font-mono text-sm dark:bg-gray-900" wire:model="sampleClaims"></textarea></label>
+            @if ($previewError)<p class="text-sm text-danger-600">{{ $previewError }}</p>@endif
+            <div class="divide-y dark:divide-white/10">@foreach ($previewResults as $result)<div class="py-3"><p class="font-semibold">{{ $result['label'] }} <span class="font-mono text-xs font-normal text-gray-500">{{ $result['target'] }}</span></p><dl class="mt-1 grid grid-cols-[8rem,1fr] text-sm"><dt>Status</dt><dd>{{ $result['status'] }}</dd>@if ($result['source_type'])<dt>Source type</dt><dd>{{ $result['source_type'] }}</dd>@endif @if ($result['source'])<dt>Selected source</dt><dd class="font-mono">{{ $result['source'] }}</dd>@endif @if ($result['converted_type'])<dt>Converted type</dt><dd>{{ $result['converted_type'] }}</dd><dt>Resolved value</dt><dd class="break-all">{{ is_scalar($result['value']) ? var_export($result['value'], true) : json_encode($result['value']) }}</dd>@endif @if (isset($result['error']))<dt>Error</dt><dd class="text-danger-600">{{ $result['error'] }}</dd>@endif</dl></div>@endforeach</div>
+            <x-slot name="footerActions"><x-filament::button wire:click="testMappings">Run test</x-filament::button></x-slot>
+        </x-filament::modal>
+
+        @if ($mappingHistory)<details class="mt-6 rounded-xl border border-gray-200 p-4 dark:border-white/10"><summary class="cursor-pointer font-semibold">Mapping history</summary><div class="mt-3 divide-y text-sm dark:divide-white/10">@foreach ($mappingHistory as $audit)<div class="grid grid-cols-4 gap-3 py-2"><span>{{ $audit['created_at'] }}</span><span>{{ $audit['provider'] }}</span><span>Actor {{ $audit['actor_id'] ?? 'system' }}</span><span>{{ implode(', ', $audit['targets']) }}</span></div>@endforeach</div></details>@endif
     </div>
 </x-filament-panels::page>

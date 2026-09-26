@@ -115,3 +115,15 @@ php artisan p:user-attribute-mapper:inspect --require-ucs
 5. For UCS, verify `UserResourceLimits::where('user_id', $id)->first()` contains `800`, `16384`, `100000`, and `5`. This proves callback capture → successful login → mapper → owner adapter → database write, rather than configuration alone.
 
 Capture unavailable means the Socialite user did not safely expose raw attributes; the mapper will not fetch again or clear anything. Mapping errors are isolated so authentication continues.
+
+## Fallbacks, safe transforms, preview, and auditing
+
+Mappings for the same target form a real fallback chain ordered by priority and then mapping ID. The first **present** source is authoritative and later entries are not evaluated. An invalid present value is reported and does not fall through. Only when every claim is absent does the primary mapping's missing-value behaviour run; a static candidate is always present.
+
+Static values are converted and declaratively validated before the workspace transaction is saved. Static controls are target-aware (boolean selector and numeric inputs); array/object static sources are intentionally unsupported. String targets may apply an ordered pipeline of `trim`, `lowercase`, `uppercase`, `prefix`, `suffix`, and literal `replace`. These are fixed operations: there is no expression language, script execution, template engine, or regular expression support. Transformation arguments and static values are never written to logs.
+
+Converted incoming and current values are compared strictly after target-aware normalisation. Equal values are counted as `unchanged` and are not written. Summary fields are `targets`, `processed`, `updated`, `unchanged`, `cleared`, `missing`, `unavailable`, and `invalid`.
+
+**Test mappings** evaluates the currently staged (including unsaved) workspace against administrator-supplied JSON. It shares runtime source, fallback, transformation, conversion, and declarative validation services, but never calls a writer or clearer and never persists or logs sample claims or results. Sensitive results are redacted. Target-specific writer validation can therefore still apply at login.
+
+Pelican does not currently expose a stable plugin-facing identity-configuration audit API in this repository, so the mapper keeps an append-only compact audit table and history view. Each save records actor ID when available, provider, operation, mapping ID, target, source type, and claim path. Static values, transformation arguments, claim values, preview values, tokens, and secrets are never retained in audit data.

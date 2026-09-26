@@ -120,17 +120,15 @@ it('clears only the staged source value when its source type changes', function 
     ]);
 });
 
-it('saves static source text without trimming or converting it', function (): void {
+it('rejects invalid static source text before persistence', function (): void {
     $workspace = profileWorkspace();
     $state = $workspace->load('authentik');
     $managed = collect($state['groups']['Pelican'])->search(fn (array $row) => $row['key'] === 'pelican.is_managed_externally');
     $state['groups']['Pelican'][$managed]['mappings'][0]['source_type'] = 'static';
     $state['groups']['Pelican'][$managed]['mappings'][0]['source_value'] = ' true ';
 
-    $workspace->save('authentik', $state['groups'], []);
-
-    $mapping = AttributeMapping::query()->firstOrFail();
-    expect($mapping->source_type->value)->toBe('static')->and($mapping->source_value)->toBe(' true ');
+    expect(fn () => $workspace->save('authentik', $state['groups'], []))->toThrow(InvalidArgumentException::class)
+        ->and(AttributeMapping::query()->count())->toBe(0);
 });
 
 it('loads, creates, updates, clears and isolates provider mappings', function (): void {

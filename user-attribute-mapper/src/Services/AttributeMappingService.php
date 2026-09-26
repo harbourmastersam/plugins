@@ -7,14 +7,19 @@ use HarbourmasterSam\UserAttributeMapper\Contracts\UserAttributeRegistryContract
 use HarbourmasterSam\UserAttributeMapper\Enums\MissingClaimBehavior;
 use HarbourmasterSam\UserAttributeMapper\Enums\MappingSourceType;
 use HarbourmasterSam\UserAttributeMapper\Enums\MappingLoggingMode;
-use HarbourmasterSam\UserAttributeMapper\Data\ResolvedClaim;
+use HarbourmasterSam\UserAttributeMapper\Enums\AttributeMutationResult;
 use HarbourmasterSam\UserAttributeMapper\Models\AttributeMapping;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class AttributeMappingService
 {
-    public function __construct(private readonly UserAttributeRegistryContract $registry, private readonly UserAttributeService $attributes, private readonly ClaimPathResolver $claims) {}
+    private readonly MappingCandidateResolver $candidates;
+
+    public function __construct(private readonly UserAttributeRegistryContract $registry, private readonly UserAttributeService $attributes, ClaimPathResolver $claims, ?AttributeTransformationService $transformations = null)
+    {
+        $this->candidates = new MappingCandidateResolver($claims, $transformations ?? new AttributeTransformationService());
+    }
 
     /** @param array<string, mixed> $rawClaims */
     public function apply(User $user, string $provider, array $rawClaims): void
@@ -27,41 +32,49 @@ class AttributeMappingService
         }
 
         $mode = $this->loggingMode();
-        $stats = ['processed' => 0, 'updated' => 0, 'cleared' => 0, 'missing' => 0, 'unavailable' => 0, 'invalid' => 0];
+        $chains = $mappings->groupBy('target_attribute');
+        $stats = ['targets' => $chains->count(), 'processed' => 0, 'updated' => 0, 'unchanged' => 0, 'cleared' => 0, 'missing' => 0, 'unavailable' => 0, 'invalid' => 0];
 
-        foreach ($mappings as $mapping) {
-            $stats['processed']++;
-            $context = ['user_id' => $user->id, 'provider' => $provider, 'mapping_id' => $mapping->id, 'source_type' => $mapping->source_type->value, 'target_attribute' => $mapping->target_attribute];
-            if ($mapping->source_type === MappingSourceType::Claim) {
-                $context['source_path'] = $mapping->source_value;
-            }
-            $definition = $this->registry->get($mapping->target_attribute);
+        foreach ($chains as $target => $chain) {
+            $primary = $chain->first();
+            $definition = $this->registry->get($target);
             if ($definition === null || !$definition->writableFromIdentity) {
                 $stats['unavailable']++;
-                Log::warning('Identity attribute mapping unavailable.', $context + ['result' => 'unavailable']);
+                Log::warning('Identity attribute mapping unavailable.', ['user_id' => $user->id, 'provider' => $provider, 'target_attribute' => $target, 'result' => 'unavailable']);
                 continue;
             }
-            $claim = $mapping->source_type === MappingSourceType::Static
-                ? new ResolvedClaim(present: true, value: $mapping->source_value)
-                : $this->claims->resolve($rawClaims, $mapping->source_value);
-            if (!$claim->present) {
-                $cleared = $mapping->missing_claim_behavior === MissingClaimBehavior::Clear && $this->attributes->clearFromIdentity($user, $mapping->target_attribute);
-                $result = $cleared ? 'cleared' : 'missing';
+
+            $selected = false;
+            foreach ($chain as $mapping) {
+                $stats['processed']++;
+                $context = ['user_id' => $user->id, 'provider' => $provider, 'mapping_id' => $mapping->id, 'source_type' => $mapping->source_type->value, 'target_attribute' => $target];
+                if ($mapping->source_type === MappingSourceType::Claim) $context['source_path'] = $mapping->source_value;
+                try {
+                    $candidate = $this->candidates->resolve($mapping->source_type, $mapping->source_value, $mapping->transforms ?? [], $rawClaims);
+                    if (!$candidate['present']) continue;
+                    $selected = true;
+                    $mutation = $this->attributes->setFromIdentity($user, $target, $candidate['value']);
+                    $result = $mutation?->value ?? 'updated';
+                    $stats[$result]++;
+                    if ($mode->logsIndividualResults()) Log::info('Identity attribute mapping completed.', $context + ['result' => $result]);
+                } catch (Throwable $exception) {
+                    $selected = true;
+                    $stats['invalid']++;
+                    Log::warning('Identity attribute mapping failed.', $context + ['result' => 'invalid', 'exception' => $exception::class]);
+                }
+                break; // Present candidates succeed or fail authoritatively; neither falls through.
+            }
+
+            if (!$selected) {
+                $result = 'missing';
+                if ($primary->missing_claim_behavior === MissingClaimBehavior::Clear) {
+                    $mutation = $this->attributes->clearFromIdentity($user, $target);
+                    $result = $mutation === AttributeMutationResult::Cleared ? 'cleared' : 'unchanged';
+                }
                 $stats[$result]++;
-                if ($mode->logsIndividualResults()) {
-                    Log::info('Identity attribute mapping completed.', $context + ['result' => $result]);
-                }
-                continue;
-            }
-            try {
-                $this->attributes->setFromIdentity($user, $mapping->target_attribute, $claim->value);
-                $stats['updated']++;
-                if ($mode->logsIndividualResults()) {
-                    Log::info('Identity attribute mapping completed.', $context + ['result' => 'updated']);
-                }
-            } catch (Throwable $exception) {
-                $stats['invalid']++;
-                Log::warning('Identity attribute mapping failed.', $context + ['result' => 'invalid', 'exception' => $exception::class]);
+                if ($mode->logsIndividualResults()) Log::info('Identity attribute mapping completed.', [
+                    'user_id' => $user->id, 'provider' => $provider, 'target_attribute' => $target, 'result' => $result,
+                ]);
             }
         }
 

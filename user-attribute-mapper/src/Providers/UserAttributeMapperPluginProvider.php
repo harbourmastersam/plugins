@@ -10,6 +10,9 @@ use HarbourmasterSam\UserAttributeMapper\Http\Middleware\CaptureOAuthClaims;
 use HarbourmasterSam\UserAttributeMapper\Listeners\SyncMappedAttributes;
 use HarbourmasterSam\UserAttributeMapper\OAuth\OAuthClaimContext;
 use HarbourmasterSam\UserAttributeMapper\Services\UserAttributeRegistry;
+use HarbourmasterSam\UserAttributeMapper\Services\MappingCandidateResolver;
+use HarbourmasterSam\UserAttributeMapper\Services\ClaimPathResolver;
+use HarbourmasterSam\UserAttributeMapper\Services\AttributeTransformationService;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
@@ -21,6 +24,7 @@ class UserAttributeMapperPluginProvider extends ServiceProvider
     {
         $this->app->singleton(UserAttributeRegistryContract::class, UserAttributeRegistry::class);
         $this->app->scoped(OAuthClaimContext::class, fn () => new OAuthClaimContext());
+        $this->app->singleton(MappingCandidateResolver::class, fn ($app) => new MappingCandidateResolver($app->make(ClaimPathResolver::class), $app->make(AttributeTransformationService::class)));
 
         if ($this->app->runningInConsole()) {
             $this->commands([InspectUserAttributeRegistryCommand::class]);
