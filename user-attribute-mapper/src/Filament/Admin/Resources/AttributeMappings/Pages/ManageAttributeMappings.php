@@ -6,13 +6,16 @@ use HarbourmasterSam\UserAttributeMapper\Enums\MappingSourceType;
 use HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\AttributeMappingResource;
 use HarbourmasterSam\UserAttributeMapper\Models\AttributeMapping;
 use HarbourmasterSam\UserAttributeMapper\Models\AttributeMappingAudit;
+use HarbourmasterSam\UserAttributeMapper\Models\DiscoveredClaim;
 use HarbourmasterSam\UserAttributeMapper\OAuth\OAuthProviderResolver;
 use HarbourmasterSam\UserAttributeMapper\Services\MappingAuditService;
 use HarbourmasterSam\UserAttributeMapper\Services\MappingPreviewService;
 use HarbourmasterSam\UserAttributeMapper\Services\ProfileMappingWorkspace;
+use HarbourmasterSam\UserAttributeMapper\Services\SamplePayloadBuilder;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Schema;
 use JsonException;
 
 class ManageAttributeMappings extends Page
@@ -29,7 +32,12 @@ class ManageAttributeMappings extends Page
     public array $unavailable = [];
     /** @var array<int, array{id: int, source_type: string, source_value: string, target_attribute: string}> */
     public array $legacyMappings = [];
-    public string $sampleClaims = "{\n    \"preferred_username\": \"sam\",\n    \"email\": \"sam@example.com\"\n}";
+    public string $sampleClaims = '';
+    public bool $sampleGenerated = false;
+    public bool $includeAllDiscovered = false;
+    /** @var list<array{path: string, type: string, last_seen_at: ?string}> */
+    public array $discoveredClaims = [];
+    public ?string $sampleWarning = null;
     /** @var list<array<string, mixed>> */
     public array $previewResults = [];
     public ?string $previewError = null;
@@ -63,6 +71,7 @@ class ManageAttributeMappings extends Page
 
         if ($this->provider !== '') {
             $this->loadMappings($workspace);
+            $this->loadDiscoveredClaims();
         }
     }
 
@@ -74,6 +83,9 @@ class ManageAttributeMappings extends Page
         $this->providerOptions = $available;
         $this->provider = $provider;
         $this->loadMappings($workspace);
+        $this->loadDiscoveredClaims();
+        $this->sampleClaims = '';
+        $this->sampleGenerated = false;
         $this->dispatch('mapping-workspace-saved');
     }
 
@@ -178,6 +190,28 @@ class ManageAttributeMappings extends Page
         }
     }
 
+    public function generateSamplePayload(SamplePayloadBuilder $builder): void
+    {
+        $result = $builder->build($this->provider, $this->uiStateToWorkspaceState(), $this->includeAllDiscovered);
+        $this->sampleClaims = json_encode($result['payload'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) ?: '{}';
+        $this->sampleWarning = $result['warning'];
+        $this->sampleGenerated = true;
+    }
+
+    public function openTestMappings(SamplePayloadBuilder $builder): void
+    {
+        if (!$this->sampleGenerated && trim($this->sampleClaims) === '') $this->generateSamplePayload($builder);
+        $this->dispatch('open-modal', id: 'test-mappings');
+    }
+
+    public function clearDiscoveredClaims(): void
+    {
+        if (!Schema::hasTable('user_attribute_discovered_claims')) return;
+        DiscoveredClaim::query()->where('provider', $this->provider)->delete();
+        $this->loadDiscoveredClaims();
+        Notification::make()->title('Discovered claims cleared')->success()->send();
+    }
+
     public function removeLegacyMapping(int $id, MappingAuditService $audit): void
     {
         $mapping = AttributeMapping::query()->where('provider', '*')->whereKey($id)->first();
@@ -195,6 +229,16 @@ class ManageAttributeMappings extends Page
         $state = $workspace->load($this->provider);
         $this->groups = $this->workspaceStateToUiState($state['groups']);
         $this->unavailable = $state['unavailable'];
+    }
+
+    private function loadDiscoveredClaims(): void
+    {
+        if (!Schema::hasTable('user_attribute_discovered_claims')) {
+            $this->discoveredClaims = [];
+            return;
+        }
+        $this->discoveredClaims = DiscoveredClaim::query()->where('provider', $this->provider)->orderByRaw("claim_type = 'object'")->orderBy('claim_path')->get()
+            ->map(fn (DiscoveredClaim $claim): array => ['path' => $claim->claim_path, 'type' => $claim->claim_type, 'last_seen_at' => $claim->last_seen_at?->toDateTimeString()])->all();
     }
 
     /** @param array<string, array<int, array<string, mixed>>> $groups */

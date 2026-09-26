@@ -140,10 +140,18 @@
                                             maxlength="512"
                                             placeholder="{{ $isStatic ? 'Enter a static value…' : 'Choose an attribute or enter a claim path…' }}"
                                             aria-describedby="relationship-{{ $modalId }}"
+                                            @if (! $isStatic) list="claims-{{ $modalId }}" autocomplete="off" @endif
                                             wire:model.blur="groups.{{ $groupIndex }}.rows.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"
                                             x-on:input="sourceValue = $event.target.value"
                                             class="fi-input block w-full border-none bg-transparent py-1.5 text-base text-gray-950 outline-none transition duration-75 placeholder:text-gray-400 focus:ring-0 dark:text-white dark:placeholder:text-gray-500 sm:text-sm sm:leading-6"
                                         >
+                                        @if (! $isStatic)
+                                        <datalist id="claims-{{ $modalId }}">
+                                            @foreach ($discoveredClaims as $claim)
+                                                @if ($claim['type'] !== 'object')<option value="{{ $claim['path'] }}" label="{{ $claim['type'] }} · last seen {{ $claim['last_seen_at'] }}"></option>@endif
+                                            @endforeach
+                                        </datalist>
+                                        @endif
                                         @endif
                                     </x-filament::input.wrapper>
                                     </div>
@@ -345,15 +353,23 @@
         <div class="sticky bottom-4 z-10 mt-6 flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur dark:border-white/10 dark:bg-gray-900/95 sm:px-6">
             <p x-show="dirty" x-cloak class="flex items-center gap-2 text-sm font-medium text-warning-600 dark:text-warning-400"><span class="h-2 w-2 rounded-full bg-current"></span>Unsaved changes</p>
             <span x-show="! dirty" class="text-sm text-gray-500 dark:text-gray-400">Mappings are saved together for this provider.</span>
-            <div class="flex gap-2"><x-filament::button color="gray" icon="tabler-flask" x-on:click="$dispatch('open-modal', { id: 'test-mappings' })">Test mappings</x-filament::button><x-filament::button icon="tabler-device-floppy" wire:click="save" wire:loading.attr="disabled">Save Mappings</x-filament::button></div>
+            <div class="flex gap-2"><x-filament::button color="gray" icon="tabler-list-search" x-on:click="$dispatch('open-modal', { id: 'discovered-claims' })">Discovered claims ({{ count($discoveredClaims) }})</x-filament::button><x-filament::button color="gray" icon="tabler-flask" wire:click="openTestMappings">Test mappings</x-filament::button><x-filament::button icon="tabler-device-floppy" wire:click="save" wire:loading.attr="disabled">Save Mappings</x-filament::button></div>
         </div>
         @endif
+        <x-filament::modal id="discovered-claims" width="3xl">
+            <x-slot name="heading">Discovered claims for {{ $providerOptions[$provider] ?? $provider }}</x-slot>
+            <x-slot name="description">{{ count($discoveredClaims) }} claim paths. Only schema metadata is stored; claim values are never stored.</x-slot>
+            <div class="max-h-96 overflow-auto"><table class="w-full text-left text-sm"><thead><tr><th class="py-2">Claim</th><th>Type</th><th>Last seen</th></tr></thead><tbody class="divide-y dark:divide-white/10">@forelse ($discoveredClaims as $claim)<tr><td class="py-2 font-mono">{{ $claim['path'] }}</td><td>{{ $claim['type'] }}</td><td>{{ $claim['last_seen_at'] }}</td></tr>@empty<tr><td colspan="3" class="py-8 text-center text-gray-500">No claims have been discovered for this provider.</td></tr>@endforelse</tbody></table></div>
+            <x-slot name="footerActions"><x-filament::button color="danger" wire:confirm="Clear discovered claim metadata for this provider? Mappings will not be deleted." wire:click="clearDiscoveredClaims">Clear discovered claims</x-filament::button></x-slot>
+        </x-filament::modal>
         <x-filament::modal id="test-mappings" width="3xl">
             <x-slot name="heading">Test mappings</x-slot>
             <x-slot name="description">This is a dry-run of source resolution, transformation, type conversion and declarative validation. Target-specific write-time validation may still apply during login.</x-slot>
+            <div class="flex flex-wrap items-center justify-between gap-3"><label class="flex items-center gap-2 text-sm"><input type="checkbox" wire:model="includeAllDiscovered"> Include all discovered claims</label><x-filament::button color="gray" size="sm" wire:click="generateSamplePayload">Generate sample payload</x-filament::button></div>
             <label class="block text-sm font-medium">Sample identity-provider claims<textarea class="mt-2 block min-h-48 w-full rounded-lg border-gray-300 font-mono text-sm dark:bg-gray-900" wire:model="sampleClaims"></textarea></label>
+            @if ($sampleWarning)<p class="text-sm text-warning-600">{{ $sampleWarning }} You can edit the JSON manually and continue.</p>@endif
             @if ($previewError)<p class="text-sm text-danger-600">{{ $previewError }}</p>@endif
-            <div class="divide-y dark:divide-white/10">@foreach ($previewResults as $result)<div class="py-3"><p class="font-semibold">{{ $result['label'] }} <span class="font-mono text-xs font-normal text-gray-500">{{ $result['target'] }}</span></p><dl class="mt-1 grid grid-cols-[8rem,1fr] text-sm"><dt>Status</dt><dd>{{ $result['status'] }}</dd>@if ($result['source_type'])<dt>Source type</dt><dd>{{ $result['source_type'] }}</dd>@endif @if ($result['source'])<dt>Selected source</dt><dd class="font-mono">{{ $result['source'] }}</dd>@endif @if ($result['converted_type'])<dt>Converted type</dt><dd>{{ $result['converted_type'] }}</dd><dt>Resolved value</dt><dd class="break-all">{{ is_scalar($result['value']) ? var_export($result['value'], true) : json_encode($result['value']) }}</dd>@endif @if (isset($result['error']))<dt>Error</dt><dd class="text-danger-600">{{ $result['error'] }}</dd>@endif</dl></div>@endforeach</div>
+            <div class="divide-y dark:divide-white/10">@foreach ($previewResults as $result)<div class="py-3"><p class="font-semibold">{{ $result['label'] }} <span class="font-mono text-xs font-normal text-gray-500">{{ $result['target'] }}</span></p><dl class="mt-1 grid grid-cols-[8rem,1fr] text-sm"><dt>Status</dt><dd>{{ $result['status'] }}</dd>@if ($result['source_type'])<dt>Source type</dt><dd>{{ $result['source_type'] }}</dd>@endif @if ($result['source'])<dt>{{ $result['selected_candidate'] ? 'Selected source' : 'Configured source' }}</dt><dd class="font-mono">{{ $result['source'] }}</dd>@endif @if ($result['selected_candidate'])<dt>Selected candidate</dt><dd>{{ $result['selected_candidate'] }}</dd>@endif @if ($result['converted_type'])<dt>Converted type</dt><dd>{{ $result['converted_type'] }}</dd><dt>Resolved value</dt><dd class="break-all">{{ is_scalar($result['value']) ? var_export($result['value'], true) : json_encode($result['value']) }}</dd>@endif @if (isset($result['error']))<dt>Error</dt><dd class="text-danger-600">{{ $result['error'] }}</dd>@endif</dl></div>@endforeach</div>
             <x-slot name="footerActions"><x-filament::button wire:click="testMappings">Run test</x-filament::button></x-slot>
         </x-filament::modal>
 

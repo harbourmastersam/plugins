@@ -19,19 +19,22 @@ class MappingPreviewService
                 ->sortBy([['priority', 'asc'], ['id', 'asc']])->values();
             if ($chain->isEmpty()) continue;
             $definition = $this->registry->get((string) $row['key']);
-            $result = ['target' => $row['key'], 'label' => $row['label'], 'status' => 'Missing / preserve', 'source_type' => null, 'source' => null, 'value' => null, 'converted_type' => null, 'sensitive' => $definition?->sensitive ?? false];
+            $primary = $chain->first();
+            $primaryType = MappingSourceType::tryFrom((string) ($primary['source_type'] ?? '')) ?? MappingSourceType::Claim;
+            $result = ['target' => $row['key'], 'label' => $row['label'], 'status' => 'Missing — preserve existing value', 'source_type' => ucfirst($primaryType->value), 'source' => $primaryType === MappingSourceType::Claim ? $primary['source_value'] : null, 'selected_candidate' => null, 'value' => null, 'converted_type' => null, 'sensitive' => $definition?->sensitive ?? false];
             if ($definition === null || !$definition->writableFromIdentity) {
                 $result['status'] = 'Unavailable';
                 $results[] = $result;
                 continue;
             }
-            foreach ($chain as $mapping) {
+            foreach ($chain as $candidateIndex => $mapping) {
                 $type = MappingSourceType::tryFrom((string) ($mapping['source_type'] ?? '')) ?? MappingSourceType::Claim;
                 try {
                     $candidate = $this->candidates->resolve($type, (string) $mapping['source_value'], $mapping['transforms'] ?? [], $claims);
                     if (!$candidate['present']) continue;
                     $result['source_type'] = ucfirst($type->value);
                     $result['source'] = $type === MappingSourceType::Claim ? $mapping['source_value'] : null;
+                    $result['selected_candidate'] = $candidateIndex === 0 ? 'Primary' : 'Fallback '.$candidateIndex;
                     $value = $this->attributes->convertAndValidate($definition->key, $candidate['value']);
                     $result['status'] = 'Resolved successfully';
                     $result['value'] = $definition->sensitive ? '[redacted]' : $value;
@@ -42,8 +45,8 @@ class MappingPreviewService
                 }
                 break;
             }
-            if ($result['source_type'] === null && $result['status'] !== 'Invalid' && (($chain->first()['missing_claim_behavior'] ?? 'preserve') === 'clear')) {
-                $result['status'] = $definition->clearer === null ? 'Missing / preserve' : 'Would clear';
+            if ($result['status'] !== 'Resolved successfully' && $result['status'] !== 'Invalid' && (($chain->first()['missing_claim_behavior'] ?? 'preserve') === 'clear')) {
+                $result['status'] = $definition->clearer === null ? 'Missing — preserve existing value' : 'Would clear';
             }
             $results[] = $result;
         }

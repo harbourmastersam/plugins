@@ -196,8 +196,8 @@ class ProfileMappingWorkspace
     /** Fail with an actionable message rather than an opaque query error after an incomplete update. */
     public function ensureSchemaIsCurrent(): void
     {
-        if (!Schema::hasTable('user_attribute_mappings') || !Schema::hasColumn('user_attribute_mappings', 'transforms') || !Schema::hasTable('user_attribute_mapping_audits')) {
-            throw new InvalidArgumentException('User Attribute Mapper database schema is out of date (migrations 003 and 004 are required). Re-run the plugin update/install process to apply plugin migrations.');
+        if (!Schema::hasTable('user_attribute_mappings') || !Schema::hasColumn('user_attribute_mappings', 'transforms') || !Schema::hasTable('user_attribute_mapping_audits') || (config('user-attribute-mapper.claim_discovery', true) && !Schema::hasTable('user_attribute_discovered_claims'))) {
+            throw new InvalidArgumentException('User Attribute Mapper database schema is out of date (migrations through 005 are required). Re-run the plugin update/install process to apply plugin migrations.');
         }
     }
 

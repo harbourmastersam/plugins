@@ -2,7 +2,7 @@
     "id": "user-attribute-mapper",
     "name": "User Attribute Mapper",
     "author": "harbourmastersam",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "Maps OAuth/OIDC claims to attributes explicitly registered by Pelican plugins.",
     "category": "plugin",
     "url": "https://github.com/harbourmastersam/plugins/tree/main/user-attribute-mapper",

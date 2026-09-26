@@ -30,7 +30,7 @@ class UserAttributeMapperPlugin implements HasPluginSettings, Plugin
 
     public function getSettingsFormData(): array
     {
-        return ['logging_mode' => MappingLoggingMode::resolve(config('user-attribute-mapper.logging_mode'))->value];
+        return ['logging_mode' => MappingLoggingMode::resolve(config('user-attribute-mapper.logging_mode'))->value, 'claim_discovery' => (bool) config('user-attribute-mapper.claim_discovery', true)];
     }
 
     public function getSettingsForm(): array
@@ -50,13 +50,22 @@ class UserAttributeMapperPlugin implements HasPluginSettings, Plugin
                 ])
                 ->default(MappingLoggingMode::Normal->value)
                 ->required(),
+            Radio::make('claim_discovery')
+                ->label('Claim discovery')
+                ->options([true => 'Enabled', false => 'Disabled'])
+                ->helperText('Records claim names and observed types from successful OAuth/OIDC logins. Claim values are never stored.')
+                ->default(true)
+                ->required(),
         ];
     }
 
     public function saveSettings(array $data): void
     {
         $mode = MappingLoggingMode::resolve($data['logging_mode'] ?? null);
-        $this->writeToEnvironment(['USER_ATTRIBUTE_MAPPER_LOGGING_MODE' => $mode->value]);
+        $this->writeToEnvironment([
+            'USER_ATTRIBUTE_MAPPER_LOGGING_MODE' => $mode->value,
+            'USER_ATTRIBUTE_MAPPER_CLAIM_DISCOVERY' => ($data['claim_discovery'] ?? true) ? 'true' : 'false',
+        ]);
 
         Notification::make()->title('User Attribute Mapper settings saved')->success()->send();
     }
