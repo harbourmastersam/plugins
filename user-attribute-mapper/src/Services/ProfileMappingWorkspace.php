@@ -3,11 +3,13 @@
 namespace HarbourmasterSam\UserAttributeMapper\Services;
 
 use HarbourmasterSam\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
-use HarbourmasterSam\UserAttributeMapper\Models\AttributeMapping;
-use HarbourmasterSam\UserAttributeMapper\Enums\MappingSourceType;
-use Illuminate\Support\Facades\DB;
-use InvalidArgumentException;
 use HarbourmasterSam\UserAttributeMapper\Enums\AttributeType;
+use HarbourmasterSam\UserAttributeMapper\Enums\MappingSourceType;
+use HarbourmasterSam\UserAttributeMapper\Models\AttributeMapping;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+use InvalidArgumentException;
 
 /** Builds and reconciles the target-driven state used by the profile mapping UI. */
 class ProfileMappingWorkspace
@@ -17,6 +19,7 @@ class ProfileMappingWorkspace
     /** @return array{groups: array<string, array<int, array<string, mixed>>>, unavailable: array<int, array<string, mixed>>} */
     public function load(string $provider): array
     {
+        $this->ensureSchemaIsCurrent();
         $existing = AttributeMapping::query()->where('provider', $provider)->orderBy('priority')->orderBy('id')->get();
         $byTarget = $existing->groupBy('target_attribute');
         $groups = [];
@@ -54,6 +57,8 @@ class ProfileMappingWorkspace
      */
     public function save(string $provider, array $groups, array $unavailable): void
     {
+        $this->ensureSchemaIsCurrent();
+
         if ($provider === '' || $provider === '*') {
             throw new InvalidArgumentException('Mappings must belong to a configured identity provider.');
         }
@@ -116,7 +121,7 @@ class ProfileMappingWorkspace
     /** @return array<string, mixed> */
     public function emptyMappingState(): array
     {
-        return ['id' => null, 'source_type' => MappingSourceType::Claim->value, 'source_value' => '', 'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100, 'description' => '', 'transforms' => []];
+        return ['id' => null, '_ui_key' => (string) Str::uuid(), 'source_type' => MappingSourceType::Claim->value, 'source_value' => '', 'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100, 'description' => '', 'transforms' => []];
     }
 
     /** @return array<string, mixed> */
@@ -124,13 +129,14 @@ class ProfileMappingWorkspace
     {
         return [
             'id' => $mapping->id,
+            '_ui_key' => 'mapping-'.$mapping->id,
             'source_type' => $mapping->source_type->value,
             'source_value' => $mapping->source_value,
             'enabled' => $mapping->enabled,
             'missing_claim_behavior' => $mapping->missing_claim_behavior->value,
             'priority' => $mapping->priority,
             'description' => $mapping->description ?? '',
-            'transforms' => $mapping->transforms ?? [],
+            'transforms' => collect($mapping->transforms ?? [])->map(fn (array $transform): array => $transform + ['_ui_key' => (string) Str::uuid()])->all(),
         ];
     }
 
@@ -146,7 +152,7 @@ class ProfileMappingWorkspace
             'missing_claim_behavior' => ($state['missing_claim_behavior'] ?? 'preserve') === 'clear' ? 'clear' : 'preserve',
             'priority' => max(0, (int) ($state['priority'] ?? 100)),
             'description' => filled($state['description'] ?? null) ? (string) $state['description'] : null,
-            'transforms' => array_values($state['transforms'] ?? []),
+            'transforms' => $this->persistableTransforms($state['transforms'] ?? []),
         ];
     }
 
@@ -162,7 +168,7 @@ class ProfileMappingWorkspace
                 $sourceType = MappingSourceType::tryFrom((string) ($state['source_type'] ?? '')) ?? MappingSourceType::Claim;
                 $source = (string) ($state['source_value'] ?? '');
                 if ($source === '') continue;
-                $transforms = array_values($state['transforms'] ?? []);
+                $transforms = $this->persistableTransforms($state['transforms'] ?? []);
                 if ($transforms !== [] && $definition->type !== AttributeType::String) {
                     throw new InvalidArgumentException('Transformations are supported only for string targets.');
                 }
@@ -174,6 +180,24 @@ class ProfileMappingWorkspace
                     $attributes->convertAndValidate($definition->key, $transformations->transform($source, $transforms));
                 }
             }
+        }
+    }
+
+    /** @param array<int, array<string, mixed>> $transforms */
+    private function persistableTransforms(array $transforms): array
+    {
+        return array_values(array_map(function (array $transform): array {
+            unset($transform['_ui_key']);
+
+            return $transform;
+        }, $transforms));
+    }
+
+    /** Fail with an actionable message rather than an opaque query error after an incomplete update. */
+    public function ensureSchemaIsCurrent(): void
+    {
+        if (!Schema::hasTable('user_attribute_mappings') || !Schema::hasColumn('user_attribute_mappings', 'transforms') || !Schema::hasTable('user_attribute_mapping_audits')) {
+            throw new InvalidArgumentException('User Attribute Mapper database schema is out of date (migrations 003 and 004 are required). Re-run the plugin update/install process to apply plugin migrations.');
         }
     }
 
