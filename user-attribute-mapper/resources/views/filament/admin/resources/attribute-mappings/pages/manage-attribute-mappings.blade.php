@@ -105,17 +105,22 @@
                             @php
                                 $isStatic = ($mapping['source_type'] ?? 'claim') === 'static';
                                 $isMapped = array_key_exists('source_value', $mapping) && strlen((string) $mapping['source_value']) > 0;
-                                $isEnabled = $isMapped && ($mapping['enabled'] ?? true);
+                                $mappingEnabled = (bool) ($mapping['enabled'] ?? true);
                                 $mappingKey = $mapping['_ui_key'] ?? (isset($mapping['id']) ? 'mapping-'.$mapping['id'] : 'missing-key-'.$mappingIndex);
                                 $modalId = 'mapping-settings-'.md5($group['key'].'-'.$row['key'].'-'.$mappingKey);
                             @endphp
-                            <div class="uam-grid uam-row" wire:key="uam-{{ $row['key'] }}-{{ $mappingKey }}">
+                            <div
+                                class="uam-grid uam-row"
+                                wire:key="uam-{{ $row['key'] }}-{{ $mappingKey }}"
+                                x-data="{ sourceValue: @js((string) ($mapping['source_value'] ?? '')) }"
+                            >
                                 <div class="uam-source">
                                     <label for="source-{{ $modalId }}" class="sr-only">{{ $isStatic ? 'Static value' : 'Identity provider claim' }} for {{ $row['label'] }}</label>
                                     <div class="uam-source-controls">
                                     <x-filament::input.wrapper>
                                         <x-filament::input.select
                                             aria-label="Source type for {{ $row['label'] }}"
+                                            x-on:change="sourceValue = ''"
                                             wire:change="changeMappingSourceType({{ $groupIndex }}, {{ $rowIndex }}, {{ $mappingIndex }}, $event.target.value)"
                                         >
                                             <option value="claim" @selected(! $isStatic)>Claim</option>
@@ -124,7 +129,7 @@
                                     </x-filament::input.wrapper>
                                     <x-filament::input.wrapper>
                                         @if ($isStatic && $row['type'] === 'boolean')
-                                        <x-filament::input.select id="source-{{ $modalId }}" wire:model="groups.{{ $groupIndex }}.rows.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"><option value="">Select a value...</option><option value="true">True</option><option value="false">False</option></x-filament::input.select>
+                                        <x-filament::input.select id="source-{{ $modalId }}" wire:model="groups.{{ $groupIndex }}.rows.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value" x-on:change="sourceValue = $event.target.value"><option value="">Select a value...</option><option value="true">True</option><option value="false">False</option></x-filament::input.select>
                                         @elseif ($isStatic && in_array($row['type'], ['array', 'object']))
                                         <x-filament::input disabled value="Static values are unsupported for this target" />
                                         @else
@@ -136,6 +141,7 @@
                                             placeholder="{{ $isStatic ? 'Enter a static value…' : 'Choose an attribute or enter a claim path…' }}"
                                             aria-describedby="relationship-{{ $modalId }}"
                                             wire:model.blur="groups.{{ $groupIndex }}.rows.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"
+                                            x-on:input="sourceValue = $event.target.value"
                                             class="fi-input block w-full border-none bg-transparent py-1.5 text-base text-gray-950 outline-none transition duration-75 placeholder:text-gray-400 focus:ring-0 dark:text-white dark:placeholder:text-gray-500 sm:text-sm sm:leading-6"
                                         >
                                         @endif
@@ -144,24 +150,28 @@
                                 </div>
 
                                 <div class="uam-connector">
-                                    @if ($isMapped)
-                                        <button
-                                            type="button"
-                                            class="uam-state {{ $isEnabled ? 'uam-state-mapped' : '' }}"
-                                            aria-label="{{ $isEnabled ? 'Disable' : 'Enable' }} mapping to {{ $row['label'] }}"
-                                            title="Click to {{ $isEnabled ? 'disable' : 'enable' }} this mapping"
-                                            x-on:click="dirty = true"
-                                            wire:click="toggleMappingEnabled({{ $groupIndex }}, {{ $rowIndex }}, {{ $mappingIndex }})"
-                                        >
-                                            @if ($isEnabled)<span aria-hidden="true">✓</span>@endif
-                                            <span>{{ $isEnabled ? 'Mapped' : 'Disabled' }}</span>
-                                            <span class="uam-direction" aria-hidden="true">→</span>
-                                        </button>
-                                    @else
-                                        <span class="uam-state uam-state-unmapped" aria-label="Unmapped from {{ $row['label'] }}">
-                                            <span>Unmapped</span><span class="uam-direction" aria-hidden="true">→</span>
-                                        </span>
-                                    @endif
+                                    <button
+                                        type="button"
+                                        class="uam-state {{ $mappingEnabled ? 'uam-state-mapped' : '' }}"
+                                        aria-label="{{ $mappingEnabled ? 'Disable' : 'Enable' }} mapping to {{ $row['label'] }}"
+                                        title="Click to {{ $mappingEnabled ? 'disable' : 'enable' }} this mapping"
+                                        x-show="String(sourceValue).length > 0"
+                                        x-cloak
+                                        x-on:click="dirty = true"
+                                        wire:click="toggleMappingEnabled({{ $groupIndex }}, {{ $rowIndex }}, {{ $mappingIndex }})"
+                                    >
+                                        @if ($mappingEnabled)<span aria-hidden="true">✓</span>@endif
+                                        <span>{{ $mappingEnabled ? 'Mapped' : 'Disabled' }}</span>
+                                        <span class="uam-direction" aria-hidden="true">→</span>
+                                    </button>
+                                    <span
+                                        class="uam-state uam-state-unmapped"
+                                        aria-label="Unmapped from {{ $row['label'] }}"
+                                        x-show="String(sourceValue).length === 0"
+                                        x-cloak
+                                    >
+                                        <span>Unmapped</span><span class="uam-direction" aria-hidden="true">→</span>
+                                    </span>
                                 </div>
 
                                 <div class="uam-target">

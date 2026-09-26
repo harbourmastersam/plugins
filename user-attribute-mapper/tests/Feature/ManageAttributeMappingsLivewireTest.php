@@ -78,6 +78,34 @@ it('hydrates a blank rendered claim input and creates its mapping', function ():
     expect(AttributeMapping::where('target_attribute', 'pelican.email')->value('source_value'))->toBe('email');
 });
 
+it('renders browser-local source state without making text inputs live', function (): void {
+    $editor = mappingEditor();
+    [$group, $row] = mappingEditorIndexes($editor->get('groups'), 'pelican.email');
+    $path = "groups.{$group}.rows.{$row}.mappings.0.source_value";
+
+    $editor
+        ->assertSeeHtml('wire:model.blur="'.$path.'"')
+        ->assertSeeHtml('x-on:input="sourceValue = $event.target.value"')
+        ->assertSeeHtml('x-on:change="sourceValue = \'\'"')
+        ->assertSeeHtml('x-show="String(sourceValue).length > 0"')
+        ->assertSeeHtml('x-show="String(sourceValue).length === 0"')
+        ->assertSeeHtml('x-cloak')
+        ->assertDontSeeHtml('wire:model.live="'.$path.'"');
+});
+
+it('renders browser-local updates for the static boolean selector', function (): void {
+    AttributeMapping::create([
+        'provider' => 'authentik', 'source_type' => 'static', 'source_value' => 'false',
+        'target_attribute' => 'pelican.is_managed_externally', 'enabled' => false,
+        'missing_claim_behavior' => 'preserve', 'priority' => 10,
+    ]);
+
+    mappingEditor()
+        ->assertSeeHtml('x-on:change="sourceValue = $event.target.value"')
+        ->assertSeeHtml('>Disabled</span>')
+        ->assertSeeHtml('>Unmapped</span>');
+});
+
 it('uses the rendered source type action and clears only genuine type changes', function (): void {
     AttributeMapping::create([
         'provider' => 'authentik', 'source_type' => 'claim', 'source_value' => 'preferred_username',
