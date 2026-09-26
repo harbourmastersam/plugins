@@ -6,7 +6,7 @@ User Attribute Mapper adds an Okta-style, provider-neutral profile mapping layer
 
 Install it as a normal Pelican plugin and run Pelican's plugin migrations. In the admin panel open **Attribute Mappings**, create a mapping, and select:
 
-When upgrading from a version before 1.1.0, complete Pelican's normal plugin update/install process and its migration step; migrations `003_add_mapping_transforms.php` and `004_create_user_attribute_mapping_audits.php` must both be applied. If the mapping page reports an out-of-date schema, repeat that update/install flow for User Attribute Mapper, run `php artisan optimize:clear`, and reload the page. Do not continue editing against a partially migrated schema.
+When upgrading from a version before 1.2.0, complete Pelican's normal plugin update/install process and its migration step; migrations through `005_create_user_attribute_discovered_claims.php` must be applied. If the mapping page reports an out-of-date schema, repeat that update/install flow for User Attribute Mapper, run `php artisan optimize:clear`, and reload the page. Do not continue editing against a partially migrated schema.
 
 1. a currently registered and enabled provider;
 2. a source type and either a dot-separated claim path such as `pelican_limits.cpu` or a static text value;
@@ -22,6 +22,16 @@ Legacy rows whose provider is `*` remain in the database until an administrator 
 Nested arrays/objects use literal dot-separated paths. Absent, `null`, `false`, `0`, and `""` are distinct. An absent claim preserves the existing value by default. `clear` only works when the owner supplied a clearer; otherwise it also preserves the value.
 
 Supported types are string, integer, float, boolean, array, and object. Conversion is deliberately strict: `"800"` is an integer and `"true"`/`"false"` are booleans, while `"hello"` cannot become integer `0`. The owner supplies Laravel validation rules after conversion. Invalid input, unavailable adapters, and writer failures are logged without values and do not block login.
+
+## Claim discovery
+
+Claim discovery is enabled by default and can be controlled in plugin settings or with `USER_ATTRIBUTE_MAPPER_CLAIM_DISCOVERY=true`. After a successful OAuth/OIDC login, the mapper learns a schema scoped strictly to that provider. It stores only the provider ID, dot-separated claim path, observed type, first/last observation timestamps, and observation count. **Actual claim values are never stored.** Disabling discovery stops new observations without deleting existing metadata, and discovery failures never block login.
+
+Associative arrays are treated as nested objects: both a useful parent object path and scalar leaf paths such as `pelican_limits.cpu` are recorded. Lists are recorded only as `array`; unstable numeric paths and their member values are not inspected. Null observations do not replace a known concrete type, and conflicting concrete observations settle on `mixed`. Credential-like path segments (tokens, authorization codes, passwords, and secrets) are rejected independently at capture and discovery.
+
+The mapping editor offers provider-scoped discovered paths through native browser autocomplete, including type and last-seen metadata. The native text input remains free-form, so administrators can always enter an unobserved path. **Discovered claims** lists the current provider's schema and can clear it—with confirmation—without touching mappings; the next successful login can learn it again.
+
+**Test mappings** generates fake JSON from the current staged claim mappings, including unsaved edits, and optionally all discovered leaf paths. Known Pelican targets receive useful safe examples, target/source types receive synthetic values, nested paths become nested JSON objects, and static mappings add no claim. It never copies a user's observed data. Manual edits are preserved until **Generate sample payload** is explicitly selected again. Incompatible paths such as `foo` and `foo.bar` produce a warning while leaving the JSON editable.
 
 ## Mapping sources
 

@@ -5,6 +5,7 @@ use HarbourmasterSam\UserAttributeMapper\Data\UserAttributeDefinition;
 use HarbourmasterSam\UserAttributeMapper\Enums\AttributeType;
 use HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings;
 use HarbourmasterSam\UserAttributeMapper\Models\AttributeMapping;
+use HarbourmasterSam\UserAttributeMapper\Models\DiscoveredClaim;
 use HarbourmasterSam\UserAttributeMapper\OAuth\OAuthProviderResolver;
 use HarbourmasterSam\UserAttributeMapper\Services\ProfileMappingWorkspace;
 use HarbourmasterSam\UserAttributeMapper\Services\UserAttributeRegistry;
@@ -91,6 +92,22 @@ it('renders browser-local source state without making text inputs live', functio
         ->assertSeeHtml('x-show="String(sourceValue).length === 0"')
         ->assertSeeHtml('x-cloak')
         ->assertDontSeeHtml('wire:model.live="'.$path.'"');
+});
+
+it('keeps native claim inputs editable and provider-scopes value-free autocomplete', function (): void {
+    $now = now();
+    DiscoveredClaim::create(['provider' => 'authentik', 'claim_path' => 'pelican_limits.cpu', 'claim_type' => 'integer', 'first_seen_at' => $now, 'last_seen_at' => $now]);
+    DiscoveredClaim::create(['provider' => 'other', 'claim_path' => 'private.other_claim', 'claim_type' => 'string', 'first_seen_at' => $now, 'last_seen_at' => $now]);
+
+    $editor = mappingEditor();
+    [$group, $row] = mappingEditorIndexes($editor->get('groups'), 'pelican.email');
+    $path = "groups.{$group}.rows.{$row}.mappings.0.source_value";
+    $editor->assertSeeHtml('type="text"')->assertSeeHtml('list="claims-')
+        ->assertSee('pelican_limits.cpu')->assertSee('integer')->assertDontSee('private.other_claim')
+        ->assertSeeHtml('wire:model.blur="'.$path.'"')->set($path, 'never.observed.manual_path')
+        ->assertSet($path, 'never.observed.manual_path')
+        ->assertSeeHtml('x-on:input="sourceValue = $event.target.value"')
+        ->assertSeeHtml('x-show="String(sourceValue).length > 0"');
 });
 
 it('renders browser-local updates for the static boolean selector', function (): void {
