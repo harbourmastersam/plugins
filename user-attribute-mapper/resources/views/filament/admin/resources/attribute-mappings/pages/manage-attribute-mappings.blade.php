@@ -29,6 +29,7 @@
         .uam-target { display: flex; min-width: 0; height: 100%; align-items: center; justify-content: space-between; gap: .75rem; padding: .6rem 1.5rem; background: var(--uam-target); }
         .uam-target-name { color: var(--uam-text); font-size: .875rem; font-weight: 600; }
         .uam-target-meta { display: flex; margin-top: .2rem; gap: .35rem; color: var(--uam-muted); font-size: .7rem; }
+        .uam-sample-claims { min-height: 12rem; max-height: min(60vh, 36rem); resize: vertical; overflow-x: auto; }
         @media (max-width: 1023px) {
             .uam-grid { grid-template-columns: minmax(0, 1fr); }
             .uam-profile-target { grid-column: 1; border-top: 1px solid var(--uam-border); }
@@ -41,7 +42,21 @@
     </style>
 
     <div
-        x-data="{ dirty: false }"
+        x-data="{
+            dirty: false,
+            resizeSampleClaims() {
+                const textarea = this.$refs.sampleClaims;
+                if (! textarea) return;
+                const rootSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+                const minHeight = 12 * rootSize;
+                const maxHeight = Math.min(window.innerHeight * 0.6, 36 * rootSize);
+                textarea.style.height = 'auto';
+                textarea.style.height = `${Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight))}px`;
+                textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+            },
+        }"
+        x-on:open-modal.window="if ($event.detail.id === 'test-mappings') $nextTick(() => resizeSampleClaims())"
+        x-on:resize.window.debounce.100ms="resizeSampleClaims()"
         x-on:input="dirty = true"
         x-on:change="dirty = true"
         x-on:mapping-workspace-saved.window="dirty = false"
@@ -366,7 +381,15 @@
             <x-slot name="heading">Test mappings</x-slot>
             <x-slot name="description">This is a dry-run of source resolution, transformation, type conversion and declarative validation. Target-specific write-time validation may still apply during login.</x-slot>
             <div class="flex flex-wrap items-center justify-between gap-3"><label class="flex items-center gap-2 text-sm"><input type="checkbox" wire:model="includeAllDiscovered"> Include all discovered claims</label><x-filament::button color="gray" size="sm" wire:click="generateSamplePayload">Generate sample payload</x-filament::button></div>
-            <label class="block text-sm font-medium">Sample identity-provider claims<textarea class="mt-2 block min-h-48 w-full rounded-lg border-gray-300 font-mono text-sm dark:bg-gray-900" wire:model="sampleClaims"></textarea></label>
+            <label class="block text-sm font-medium">Sample identity-provider claims<textarea
+                x-ref="sampleClaims"
+                x-effect="$wire.sampleClaims; $nextTick(() => resizeSampleClaims())"
+                x-on:input="resizeSampleClaims()"
+                rows="10"
+                class="uam-sample-claims mt-2 block w-full rounded-lg border-gray-300 font-mono text-sm dark:bg-gray-900"
+                style="min-height: 12rem; max-height: min(60vh, 36rem); resize: vertical;"
+                wire:model="sampleClaims"
+            ></textarea></label>
             @if ($sampleWarning)<p class="text-sm text-warning-600">{{ $sampleWarning }} You can edit the JSON manually and continue.</p>@endif
             @if ($previewError)<p class="text-sm text-danger-600">{{ $previewError }}</p>@endif
             <div class="divide-y dark:divide-white/10">@foreach ($previewResults as $result)<div class="py-3"><p class="font-semibold">{{ $result['label'] }} <span class="font-mono text-xs font-normal text-gray-500">{{ $result['target'] }}</span></p><dl class="mt-1 grid grid-cols-[8rem,1fr] text-sm"><dt>Status</dt><dd>{{ $result['status'] }}</dd>@if ($result['source_type'])<dt>Source type</dt><dd>{{ $result['source_type'] }}</dd>@endif @if ($result['source'])<dt>{{ $result['selected_candidate'] ? 'Selected source' : 'Configured source' }}</dt><dd class="font-mono">{{ $result['source'] }}</dd>@endif @if ($result['selected_candidate'])<dt>Selected candidate</dt><dd>{{ $result['selected_candidate'] }}</dd>@endif @if ($result['converted_type'])<dt>Converted type</dt><dd>{{ $result['converted_type'] }}</dd><dt>Resolved value</dt><dd class="break-all">{{ is_scalar($result['value']) ? var_export($result['value'], true) : json_encode($result['value']) }}</dd>@endif @if (isset($result['error']))<dt>Error</dt><dd class="text-danger-600">{{ $result['error'] }}</dd>@endif</dl></div>@endforeach</div>

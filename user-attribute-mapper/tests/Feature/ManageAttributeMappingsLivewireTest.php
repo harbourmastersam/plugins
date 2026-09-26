@@ -94,6 +94,16 @@ it('renders browser-local source state without making text inputs live', functio
         ->assertDontSeeHtml('wire:model.live="'.$path.'"');
 });
 
+it('renders a bounded auto-resizing sample JSON textarea without replacing its Livewire model', function (): void {
+    mappingEditor()
+        ->assertSeeHtml('x-ref="sampleClaims"')
+        ->assertSeeHtml('x-effect="$wire.sampleClaims; $nextTick(() =&gt; resizeSampleClaims())"')
+        ->assertSeeHtml('x-on:input="resizeSampleClaims()"')
+        ->assertSeeHtml('rows="10"')
+        ->assertSeeHtml('min-height: 12rem; max-height: min(60vh, 36rem); resize: vertical;')
+        ->assertSeeHtml('wire:model="sampleClaims"');
+});
+
 it('keeps native claim inputs editable and provider-scopes value-free autocomplete', function (): void {
     $now = now();
     DiscoveredClaim::create(['provider' => 'authentik', 'claim_path' => 'pelican_limits.cpu', 'claim_type' => 'integer', 'first_seen_at' => $now, 'last_seen_at' => $now]);
