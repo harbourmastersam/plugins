@@ -96,36 +96,35 @@
                 </div>
             </div>
 
-            @forelse ($groups as $group => $rows)
-                <section aria-labelledby="mapping-group-{{ \Illuminate\Support\Str::slug($group) }}" class="uam-group">
-                    <h2 id="mapping-group-{{ \Illuminate\Support\Str::slug($group) }}" class="uam-group-title">{{ $group }}</h2>
+            @forelse ($groups as $groupIndex => $group)
+                <section aria-labelledby="mapping-group-{{ \Illuminate\Support\Str::slug($group['key']) }}" class="uam-group">
+                    <h2 id="mapping-group-{{ \Illuminate\Support\Str::slug($group['key']) }}" class="uam-group-title">{{ $group['label'] }}</h2>
 
-                    @foreach ($rows as $rowIndex => $row)
+                    @foreach ($group['rows'] as $rowIndex => $row)
                         @foreach ($row['mappings'] as $mappingIndex => $mapping)
                             @php
                                 $isStatic = ($mapping['source_type'] ?? 'claim') === 'static';
                                 $isMapped = array_key_exists('source_value', $mapping) && strlen((string) $mapping['source_value']) > 0;
                                 $isEnabled = $isMapped && ($mapping['enabled'] ?? true);
                                 $mappingKey = $mapping['_ui_key'] ?? (isset($mapping['id']) ? 'mapping-'.$mapping['id'] : 'missing-key-'.$mappingIndex);
-                                $modalId = 'mapping-settings-'.md5($group.'-'.$row['key'].'-'.$mappingKey);
+                                $modalId = 'mapping-settings-'.md5($group['key'].'-'.$row['key'].'-'.$mappingKey);
                             @endphp
-                            <div class="uam-grid uam-row" wire:key="mapping-{{ $row['key'] }}-{{ $mappingKey }}">
+                            <div class="uam-grid uam-row" wire:key="uam-{{ $row['key'] }}-{{ $mappingKey }}">
                                 <div class="uam-source">
                                     <label for="source-{{ $modalId }}" class="sr-only">{{ $isStatic ? 'Static value' : 'Identity provider claim' }} for {{ $row['label'] }}</label>
                                     <div class="uam-source-controls">
                                     <x-filament::input.wrapper>
                                         <x-filament::input.select
                                             aria-label="Source type for {{ $row['label'] }}"
-                                            wire:model="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_type"
-                                            wire:change="changeMappingSourceType({{ \Illuminate\Support\Js::from($group) }}, {{ $rowIndex }}, {{ $mappingIndex }}, $event.target.value)"
+                                            wire:change="changeMappingSourceType({{ $groupIndex }}, {{ $rowIndex }}, {{ $mappingIndex }}, $event.target.value)"
                                         >
-                                            <option value="claim">Claim</option>
-                                            <option value="static">Static</option>
+                                            <option value="claim" @selected(! $isStatic)>Claim</option>
+                                            <option value="static" @selected($isStatic)>Static</option>
                                         </x-filament::input.select>
                                     </x-filament::input.wrapper>
                                     <x-filament::input.wrapper>
                                         @if ($isStatic && $row['type'] === 'boolean')
-                                        <x-filament::input.select id="source-{{ $modalId }}" wire:model="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"><option value="">Select a value...</option><option value="true">True</option><option value="false">False</option></x-filament::input.select>
+                                        <x-filament::input.select id="source-{{ $modalId }}" wire:model="groups.{{ $groupIndex }}.rows.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"><option value="">Select a value...</option><option value="true">True</option><option value="false">False</option></x-filament::input.select>
                                         @elseif ($isStatic && in_array($row['type'], ['array', 'object']))
                                         <x-filament::input disabled value="Static values are unsupported for this target" />
                                         @else
@@ -136,7 +135,7 @@
                                             maxlength="512"
                                             placeholder="{{ $isStatic ? 'Enter a static value…' : 'Choose an attribute or enter a claim path…' }}"
                                             aria-describedby="relationship-{{ $modalId }}"
-                                            wire:model.blur="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"
+                                            wire:model="groups.{{ $groupIndex }}.rows.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"
                                         />
                                         @endif
                                     </x-filament::input.wrapper>
@@ -151,7 +150,7 @@
                                             aria-label="{{ $isEnabled ? 'Disable' : 'Enable' }} mapping to {{ $row['label'] }}"
                                             title="Click to {{ $isEnabled ? 'disable' : 'enable' }} this mapping"
                                             x-on:click="dirty = true"
-                                            wire:click="toggleMappingEnabled({{ \Illuminate\Support\Js::from($group) }}, {{ $rowIndex }}, {{ $mappingIndex }})"
+                                            wire:click="toggleMappingEnabled({{ $groupIndex }}, {{ $rowIndex }}, {{ $mappingIndex }})"
                                         >
                                             @if ($isEnabled)<span aria-hidden="true">✓</span>@endif
                                             <span>{{ $isEnabled ? 'Mapped' : 'Disabled' }}</span>
@@ -200,11 +199,11 @@
                                             <x-filament::dropdown.list.item icon="tabler-adjustments" x-on:click="$dispatch('open-modal', { id: '{{ $modalId }}' })">
                                                 Mapping settings
                                             </x-filament::dropdown.list.item>
-                                            <x-filament::dropdown.list.item icon="tabler-git-branch" x-on:click="dirty = true" wire:click="addMapping({{ \Illuminate\Support\Js::from($group) }}, {{ $rowIndex }})">
+                                            <x-filament::dropdown.list.item icon="tabler-git-branch" x-on:click="dirty = true" wire:click="addMapping({{ $groupIndex }}, {{ $rowIndex }})">
                                                 Add fallback mapping
                                             </x-filament::dropdown.list.item>
                                             @if ($isMapped || count($row['mappings']) > 1)
-                                                <x-filament::dropdown.list.item icon="tabler-trash" color="danger" x-on:click="dirty = true" wire:click="removeMapping({{ \Illuminate\Support\Js::from($group) }}, {{ $rowIndex }}, {{ $mappingIndex }})">
+                                                <x-filament::dropdown.list.item icon="tabler-trash" color="danger" x-on:click="dirty = true" wire:click="removeMapping({{ $groupIndex }}, {{ $rowIndex }}, {{ $mappingIndex }})">
                                                     Remove mapping
                                                 </x-filament::dropdown.list.item>
                                             @endif
@@ -230,7 +229,7 @@
                                     <label class="block space-y-1.5 text-sm font-medium text-gray-950 dark:text-white">
                                         <span>Missing claim behaviour</span>
                                         <x-filament::input.wrapper>
-                                            <x-filament::input.select wire:model="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.missing_claim_behavior">
+                                            <x-filament::input.select wire:model="groups.{{ $groupIndex }}.rows.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.missing_claim_behavior">
                                                 <option value="preserve">Preserve existing value</option>
                                                 <option value="clear">Clear when supported</option>
                                             </x-filament::input.select>
@@ -243,16 +242,16 @@
                                     @endif
                                     @if ($row['type'] === 'string')
                                     <div class="space-y-2">
-                                        <div class="flex items-center justify-between"><span class="text-sm font-medium">Transformations</span><x-filament::button size="xs" color="gray" wire:click="addTransformation({{ \Illuminate\Support\Js::from($group) }}, {{ $rowIndex }}, {{ $mappingIndex }})">Add transformation</x-filament::button></div>
+                                        <div class="flex items-center justify-between"><span class="text-sm font-medium">Transformations</span><x-filament::button size="xs" color="gray" wire:click="addTransformation({{ $groupIndex }}, {{ $rowIndex }}, {{ $mappingIndex }})">Add transformation</x-filament::button></div>
                                         <p class="text-xs text-gray-500">Applied in order before conversion. Only safe literal string operations are available.</p>
                                         @foreach (($mapping['transforms'] ?? []) as $transformIndex => $transform)
                                         <div class="grid grid-cols-[8rem,1fr,auto] gap-2" wire:key="transform-{{ $modalId }}-{{ $transform['_ui_key'] ?? 'missing-'.$transformIndex }}">
-                                            <x-filament::input.select wire:model.live="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.transforms.{{ $transformIndex }}.type"><option value="trim">Trim</option><option value="lowercase">Lowercase</option><option value="uppercase">Uppercase</option><option value="prefix">Prefix</option><option value="suffix">Suffix</option><option value="replace">Replace</option></x-filament::input.select>
+                                            <x-filament::input.select wire:model.live="groups.{{ $groupIndex }}.rows.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.transforms.{{ $transformIndex }}.type"><option value="trim">Trim</option><option value="lowercase">Lowercase</option><option value="uppercase">Uppercase</option><option value="prefix">Prefix</option><option value="suffix">Suffix</option><option value="replace">Replace</option></x-filament::input.select>
                                             <div class="flex gap-2">
-                                                @if (in_array($transform['type'] ?? '', ['prefix', 'suffix']))<x-filament::input placeholder="Text" wire:model="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.transforms.{{ $transformIndex }}.value" />
-                                                @elseif (($transform['type'] ?? '') === 'replace')<x-filament::input placeholder="From" wire:model="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.transforms.{{ $transformIndex }}.from" /><x-filament::input placeholder="To" wire:model="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.transforms.{{ $transformIndex }}.to" />@endif
+                                                @if (in_array($transform['type'] ?? '', ['prefix', 'suffix']))<x-filament::input placeholder="Text" wire:model="groups.{{ $groupIndex }}.rows.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.transforms.{{ $transformIndex }}.value" />
+                                                @elseif (($transform['type'] ?? '') === 'replace')<x-filament::input placeholder="From" wire:model="groups.{{ $groupIndex }}.rows.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.transforms.{{ $transformIndex }}.from" /><x-filament::input placeholder="To" wire:model="groups.{{ $groupIndex }}.rows.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.transforms.{{ $transformIndex }}.to" />@endif
                                             </div>
-                                            <div class="flex"><x-filament::icon-button icon="tabler-arrow-up" label="Move up" wire:click="moveTransformation({{ \Illuminate\Support\Js::from($group) }}, {{ $rowIndex }}, {{ $mappingIndex }}, {{ $transformIndex }}, -1)" /><x-filament::icon-button icon="tabler-arrow-down" label="Move down" wire:click="moveTransformation({{ \Illuminate\Support\Js::from($group) }}, {{ $rowIndex }}, {{ $mappingIndex }}, {{ $transformIndex }}, 1)" /><x-filament::icon-button icon="tabler-trash" color="danger" label="Remove" wire:click="removeTransformation({{ \Illuminate\Support\Js::from($group) }}, {{ $rowIndex }}, {{ $mappingIndex }}, {{ $transformIndex }})" /></div>
+                                            <div class="flex"><x-filament::icon-button icon="tabler-arrow-up" label="Move up" wire:click="moveTransformation({{ $groupIndex }}, {{ $rowIndex }}, {{ $mappingIndex }}, {{ $transformIndex }}, -1)" /><x-filament::icon-button icon="tabler-arrow-down" label="Move down" wire:click="moveTransformation({{ $groupIndex }}, {{ $rowIndex }}, {{ $mappingIndex }}, {{ $transformIndex }}, 1)" /><x-filament::icon-button icon="tabler-trash" color="danger" label="Remove" wire:click="removeTransformation({{ $groupIndex }}, {{ $rowIndex }}, {{ $mappingIndex }}, {{ $transformIndex }})" /></div>
                                         </div>
                                         @endforeach
                                     </div>
@@ -260,13 +259,13 @@
                                     <label class="block space-y-1.5 text-sm font-medium text-gray-950 dark:text-white">
                                         <span>Priority</span>
                                         <x-filament::input.wrapper>
-                                            <x-filament::input type="number" min="0" wire:model="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.priority" />
+                                            <x-filament::input type="number" min="0" wire:model="groups.{{ $groupIndex }}.rows.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.priority" />
                                         </x-filament::input.wrapper>
                                     </label>
                                     <label class="block space-y-1.5 text-sm font-medium text-gray-950 dark:text-white">
                                         <span>Description</span>
                                         <x-filament::input.wrapper>
-                                            <x-filament::input type="text" wire:model="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.description" />
+                                            <x-filament::input type="text" wire:model="groups.{{ $groupIndex }}.rows.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.description" />
                                         </x-filament::input.wrapper>
                                     </label>
                                 </div>
