@@ -51,7 +51,8 @@ it('builds target-driven dynamic groups and excludes read-only attributes', func
             'pelican.is_managed_externally',
         ])
         ->and(collect($state['groups']['Example Plugin'])->pluck('key')->all())->toBe(['example-plugin.foo'])
-        ->and($state['groups']['Pelican'][0]['mappings'][0]['source_claim'])->toBe('')
+        ->and($state['groups']['Pelican'][0]['mappings'][0]['source_value'])->toBe('')
+        ->and($state['groups']['Pelican'][0]['mappings'][0]['source_type'])->toBe('claim')
         ->and($state['groups']['Pelican'][0]['nullable'])->toBeFalse()
         ->and($state['groups']['Pelican'][0]['clear_supported'])->toBeFalse()
         ->and(collect($state['groups']['Pelican'])->firstWhere('key', 'pelican.is_managed_externally'))->toMatchArray([
@@ -67,7 +68,7 @@ it('toggles only the staged enabled state and retains its source claim', functio
     $page = new \Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
     $page->groups = ['Pelican' => [[
         'mappings' => [[
-            'source_claim' => 'preferred_username',
+            'source_value' => 'preferred_username',
             'enabled' => true,
             'priority' => 25,
             'description' => 'Login name',
@@ -78,7 +79,7 @@ it('toggles only the staged enabled state and retains its source claim', functio
     $page->toggleMappingEnabled('Pelican', 0, 0);
 
     expect($page->groups['Pelican'][0]['mappings'][0])->toMatchArray([
-        'source_claim' => 'preferred_username',
+        'source_value' => 'preferred_username',
         'enabled' => false,
         'priority' => 25,
         'description' => 'Login name',
@@ -92,45 +93,73 @@ it('toggles only the staged enabled state and retains its source claim', functio
 it('does not toggle an unmapped row', function (): void {
     $page = new \Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
     $page->groups = ['Pelican' => [['mappings' => [[
-        'source_claim' => '', 'enabled' => true, 'priority' => 25,
+        'source_value' => '', 'enabled' => true, 'priority' => 25,
         'description' => 'Unchanged', 'missing_claim_behavior' => 'clear',
     ]]]]];
 
     $page->toggleMappingEnabled('Pelican', 0, 0);
 
     expect($page->groups['Pelican'][0]['mappings'][0])->toMatchArray([
-        'source_claim' => '', 'enabled' => true, 'priority' => 25,
+        'source_value' => '', 'enabled' => true, 'priority' => 25,
         'description' => 'Unchanged', 'missing_claim_behavior' => 'clear',
     ]);
+});
+
+it('clears only the staged source value when its source type changes', function (): void {
+    $page = new \Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+    $page->groups = ['Pelican' => [['mappings' => [[
+        'source_type' => 'claim', 'source_value' => 'preferred_username', 'enabled' => false,
+        'priority' => 25, 'description' => 'Keep me', 'missing_claim_behavior' => 'clear',
+    ]]]]];
+
+    $page->changeMappingSourceType('Pelican', 0, 0, 'static');
+
+    expect($page->groups['Pelican'][0]['mappings'][0])->toMatchArray([
+        'source_type' => 'static', 'source_value' => '', 'enabled' => false,
+        'priority' => 25, 'description' => 'Keep me', 'missing_claim_behavior' => 'clear',
+    ]);
+});
+
+it('saves static source text without trimming or converting it', function (): void {
+    $workspace = profileWorkspace();
+    $state = $workspace->load('authentik');
+    $managed = collect($state['groups']['Pelican'])->search(fn (array $row) => $row['key'] === 'pelican.is_managed_externally');
+    $state['groups']['Pelican'][$managed]['mappings'][0]['source_type'] = 'static';
+    $state['groups']['Pelican'][$managed]['mappings'][0]['source_value'] = ' true ';
+
+    $workspace->save('authentik', $state['groups'], []);
+
+    $mapping = AttributeMapping::query()->firstOrFail();
+    expect($mapping->source_type->value)->toBe('static')->and($mapping->source_value)->toBe(' true ');
 });
 
 it('loads, creates, updates, clears and isolates provider mappings', function (): void {
     $workspace = profileWorkspace();
     AttributeMapping::create([
-        'provider' => 'authentik', 'source_claim' => 'old_name', 'target_attribute' => 'pelican.username',
+        'provider' => 'authentik', 'source_value' => 'old_name', 'target_attribute' => 'pelican.username',
         'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100,
     ]);
     AttributeMapping::create([
-        'provider' => 'other', 'source_claim' => 'other_email', 'target_attribute' => 'pelican.email',
+        'provider' => 'other', 'source_value' => 'other_email', 'target_attribute' => 'pelican.email',
         'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100,
     ]);
 
     $state = $workspace->load('authentik');
     $username = collect($state['groups']['Pelican'])->search(fn (array $row) => $row['key'] === 'pelican.username');
     $email = collect($state['groups']['Pelican'])->search(fn (array $row) => $row['key'] === 'pelican.email');
-    expect($state['groups']['Pelican'][$username]['mappings'][0]['source_claim'])->toBe('old_name');
+    expect($state['groups']['Pelican'][$username]['mappings'][0]['source_value'])->toBe('old_name');
 
     $state['groups']['Pelican'][$username]['mappings'][0] = array_merge(
         $state['groups']['Pelican'][$username]['mappings'][0],
-        ['source_claim' => 'preferred_username_new', 'enabled' => false, 'missing_claim_behavior' => 'clear', 'priority' => 25, 'description' => 'Preferred login'],
+        ['source_value' => 'preferred_username_new', 'enabled' => false, 'missing_claim_behavior' => 'clear', 'priority' => 25, 'description' => 'Preferred login'],
     );
-    $state['groups']['Pelican'][$email]['mappings'][0]['source_claim'] = 'email';
+    $state['groups']['Pelican'][$email]['mappings'][0]['source_value'] = 'email';
     $workspace->save('authentik', $state['groups'], $state['unavailable']);
 
     expect(AttributeMapping::where('provider', 'authentik')->count())->toBe(2)
-        ->and(AttributeMapping::where('provider', 'other')->value('source_claim'))->toBe('other_email');
+        ->and(AttributeMapping::where('provider', 'other')->value('source_value'))->toBe('other_email');
     $updated = AttributeMapping::where('provider', 'authentik')->where('target_attribute', 'pelican.username')->firstOrFail();
-    expect($updated->source_claim)->toBe('preferred_username_new')
+    expect($updated->source_value)->toBe('preferred_username_new')
         ->and($updated->enabled)->toBeFalse()
         ->and($updated->missing_claim_behavior->value)->toBe('clear')
         ->and($updated->priority)->toBe(25)
@@ -138,7 +167,7 @@ it('loads, creates, updates, clears and isolates provider mappings', function ()
 
     $state = $workspace->load('authentik');
     $email = collect($state['groups']['Pelican'])->search(fn (array $row) => $row['key'] === 'pelican.email');
-    $state['groups']['Pelican'][$email]['mappings'][0]['source_claim'] = '';
+    $state['groups']['Pelican'][$email]['mappings'][0]['source_value'] = '';
     $workspace->save('authentik', $state['groups'], $state['unavailable']);
     expect(AttributeMapping::where('provider', 'authentik')->where('target_attribute', 'pelican.email')->exists())->toBeFalse();
 
@@ -147,7 +176,7 @@ it('loads, creates, updates, clears and isolates provider mappings', function ()
 it('rejects wildcard saves without deleting legacy wildcard records', function (): void {
     $workspace = profileWorkspace();
     $legacy = AttributeMapping::create([
-        'provider' => '*', 'source_claim' => 'legacy_name', 'target_attribute' => 'pelican.username',
+        'provider' => '*', 'source_value' => 'legacy_name', 'target_attribute' => 'pelican.username',
         'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100,
     ]);
 
@@ -160,7 +189,7 @@ it('rejects wildcard saves without deleting legacy wildcard records', function (
 
 it('selects only resolver options and defaults to the first enabled provider', function (): void {
     AttributeMapping::create([
-        'provider' => 'removed', 'source_claim' => 'old', 'target_attribute' => 'pelican.username',
+        'provider' => 'removed', 'source_value' => 'old', 'target_attribute' => 'pelican.username',
         'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100,
     ]);
     $providers = Mockery::mock(\Boy132\UserAttributeMapper\OAuth\OAuthProviderResolver::class);
@@ -189,7 +218,7 @@ it('keeps an empty workspace when no identity providers are enabled', function (
 it('switches between independent provider workspaces', function (): void {
     foreach ([['staff', 'staff_username'], ['port', 'port_username']] as [$provider, $claim]) {
         AttributeMapping::create([
-            'provider' => $provider, 'source_claim' => $claim, 'target_attribute' => 'pelican.username',
+            'provider' => $provider, 'source_value' => $claim, 'target_attribute' => 'pelican.username',
             'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100,
         ]);
     }
@@ -200,25 +229,25 @@ it('switches between independent provider workspaces', function (): void {
     $page->mount($providers, $workspace);
 
     $staffUsername = collect($page->groups['Pelican'])->firstWhere('key', 'pelican.username');
-    expect($staffUsername['mappings'][0]['source_claim'])->toBe('staff_username');
+    expect($staffUsername['mappings'][0]['source_value'])->toBe('staff_username');
 
     $page->changeProvider('port', $providers, $workspace);
     $portUsername = collect($page->groups['Pelican'])->firstWhere('key', 'pelican.username');
     expect($page->provider)->toBe('port')
-        ->and($portUsername['mappings'][0]['source_claim'])->toBe('port_username')
-        ->and(AttributeMapping::where('provider', 'staff')->value('source_claim'))->toBe('staff_username');
+        ->and($portUsername['mappings'][0]['source_value'])->toBe('port_username')
+        ->and(AttributeMapping::where('provider', 'staff')->value('source_value'))->toBe('staff_username');
 });
 
 it('preserves multiple priority mappings and exposes removable unavailable targets', function (): void {
     $workspace = profileWorkspace();
     foreach ([['first_name', 10], ['fallback_name', 20]] as [$claim, $priority]) {
         AttributeMapping::create([
-            'provider' => 'authentik', 'source_claim' => $claim, 'target_attribute' => 'pelican.username',
+            'provider' => 'authentik', 'source_value' => $claim, 'target_attribute' => 'pelican.username',
             'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => $priority,
         ]);
     }
     AttributeMapping::create([
-        'provider' => 'authentik', 'source_claim' => 'limits.cpu', 'target_attribute' => 'removed-plugin.cpu',
+        'provider' => 'authentik', 'source_value' => 'limits.cpu', 'target_attribute' => 'removed-plugin.cpu',
         'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100,
     ]);
 

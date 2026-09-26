@@ -4,6 +4,7 @@ namespace Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\
 
 use Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\AttributeMappingResource;
 use Boy132\UserAttributeMapper\Models\AttributeMapping;
+use Boy132\UserAttributeMapper\Enums\MappingSourceType;
 use Boy132\UserAttributeMapper\OAuth\OAuthProviderResolver;
 use Boy132\UserAttributeMapper\Services\ProfileMappingWorkspace;
 use Filament\Notifications\Notification;
@@ -21,7 +22,7 @@ class ManageAttributeMappings extends Page
     public array $groups = [];
     /** @var array<int, array<string, mixed>> */
     public array $unavailable = [];
-    /** @var array<int, array{id: int, source_claim: string, target_attribute: string}> */
+    /** @var array<int, array{id: int, source_type: string, source_value: string, target_attribute: string}> */
     public array $legacyMappings = [];
 
     public function getTitle(): string
@@ -76,9 +77,22 @@ class ManageAttributeMappings extends Page
         if (!isset($this->groups[$group][$row]['mappings'][$mapping])) return;
 
         $state = &$this->groups[$group][$row]['mappings'][$mapping];
-        if (blank($state['source_claim'] ?? null)) return;
+        if (!array_key_exists('source_value', $state) || strlen((string) $state['source_value']) === 0) return;
 
         $state['enabled'] = !(bool) ($state['enabled'] ?? true);
+    }
+
+    /** Change a staged source kind, clearing its value to avoid silently reinterpreting it. */
+    public function changeMappingSourceType(string $group, int $row, int $mapping, string $sourceType): void
+    {
+        $type = MappingSourceType::tryFrom($sourceType);
+        if ($type === null || !isset($this->groups[$group][$row]['mappings'][$mapping])) return;
+
+        $state = &$this->groups[$group][$row]['mappings'][$mapping];
+        if (($state['source_type'] ?? MappingSourceType::Claim->value) === $type->value) return;
+
+        $state['source_type'] = $type->value;
+        $state['source_value'] = '';
     }
 
     public function removeUnavailable(int $index): void
@@ -120,10 +134,11 @@ class ManageAttributeMappings extends Page
     private function loadLegacyMappings(): void
     {
         $this->legacyMappings = AttributeMapping::query()->where('provider', '*')->orderBy('id')
-            ->get(['id', 'source_claim', 'target_attribute'])
+            ->get(['id', 'source_type', 'source_value', 'target_attribute'])
             ->map(fn (AttributeMapping $mapping): array => [
                 'id' => $mapping->id,
-                'source_claim' => $mapping->source_claim,
+                'source_type' => $mapping->source_type->value,
+                'source_value' => $mapping->source_value,
                 'target_attribute' => $mapping->target_attribute,
             ])->all();
     }

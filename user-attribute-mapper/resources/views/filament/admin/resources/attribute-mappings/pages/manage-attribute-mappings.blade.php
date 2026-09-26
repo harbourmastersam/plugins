@@ -17,6 +17,7 @@
         .uam-row { min-height: 4.25rem; align-items: center; }
         .uam-row + .uam-row { border-top: 1px solid var(--uam-border); }
         .uam-source { min-width: 0; padding: .6rem 1.5rem; }
+        .uam-source-controls { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: .5rem; }
         .uam-connector { display: flex; width: 100%; align-items: center; align-self: stretch; color: var(--uam-muted); }
         .uam-connector::before, .uam-connector::after { min-width: .65rem; flex: 1 1 auto; border-top: 2px solid currentColor; content: ''; }
         .uam-state { display: inline-flex; min-width: 6.9rem; align-items: center; justify-content: center; gap: .3rem; border: 1px solid var(--uam-border); border-radius: 9999px; padding: .38rem .65rem; background: var(--uam-panel); color: var(--uam-muted); font-size: .75rem; font-weight: 700; line-height: 1; white-space: nowrap; }
@@ -35,6 +36,7 @@
             .uam-connector::before, .uam-connector::after { min-width: 0; min-height: .65rem; flex: 1 1 auto; border-top: 0; border-left: 2px solid currentColor; }
             .uam-state .uam-direction { transform: rotate(90deg); }
             .uam-target { min-height: 4.25rem; }
+            .uam-source-controls { grid-template-columns: 1fr; }
         }
     </style>
 
@@ -94,23 +96,35 @@
                     @foreach ($rows as $rowIndex => $row)
                         @foreach ($row['mappings'] as $mappingIndex => $mapping)
                             @php
-                                $isMapped = filled($mapping['source_claim']);
+                                $isStatic = ($mapping['source_type'] ?? 'claim') === 'static';
+                                $isMapped = array_key_exists('source_value', $mapping) && strlen((string) $mapping['source_value']) > 0;
                                 $isEnabled = $isMapped && ($mapping['enabled'] ?? true);
                                 $modalId = 'mapping-settings-'.md5($group.'-'.$row['key'].'-'.$mappingIndex);
                             @endphp
                             <div class="uam-grid uam-row" wire:key="mapping-{{ $row['key'] }}-{{ $mapping['id'] ?? 'new-'.$mappingIndex }}">
                                 <div class="uam-source">
-                                    <label for="source-{{ $modalId }}" class="sr-only">{{ $mappingIndex === 0 ? 'Source claim' : 'Fallback source claim' }} for {{ $row['label'] }}</label>
+                                    <label for="source-{{ $modalId }}" class="sr-only">{{ $isStatic ? 'Static value' : 'Identity provider claim' }} for {{ $row['label'] }}</label>
+                                    <div class="uam-source-controls">
+                                    <x-filament::input.wrapper>
+                                        <x-filament::input.select
+                                            aria-label="Source type for {{ $row['label'] }}"
+                                            wire:change="changeMappingSourceType({{ \Illuminate\Support\Js::from($group) }}, {{ $rowIndex }}, {{ $mappingIndex }}, $event.target.value)"
+                                        >
+                                            <option value="claim" @selected(!$isStatic)>Claim</option>
+                                            <option value="static" @selected($isStatic)>Static</option>
+                                        </x-filament::input.select>
+                                    </x-filament::input.wrapper>
                                     <x-filament::input.wrapper>
                                         <x-filament::input
                                             id="source-{{ $modalId }}"
                                             type="text"
                                             maxlength="512"
-                                            placeholder="Choose an attribute or enter a claim path…"
+                                            placeholder="{{ $isStatic ? 'Enter a static value…' : 'Choose an attribute or enter a claim path…' }}"
                                             aria-describedby="relationship-{{ $modalId }}"
-                                            wire:model.live.debounce.300ms="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_claim"
+                                            wire:model.live.debounce.300ms="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"
                                         />
                                     </x-filament::input.wrapper>
+                                    </div>
                                 </div>
 
                                 <div class="uam-connector">
@@ -190,8 +204,11 @@
                                     <div class="rounded-lg bg-gray-50 px-4 py-3 dark:bg-white/5">
                                         <p class="font-medium text-gray-950 dark:text-white">{{ $row['label'] }}</p>
                                         <p class="font-mono text-xs text-gray-500 dark:text-gray-400">{{ $row['key'] }}</p>
-                                        <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">Source: {{ $mapping['source_claim'] ?: 'Not mapped' }}</p>
+                                        <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">Source: {{ $isStatic ? 'Static value' : ($mapping['source_value'] ?: 'Not mapped') }}</p>
                                     </div>
+                                    @if ($isStatic)
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">Static values are always present, so missing-claim behaviour does not apply.</p>
+                                    @else
                                     <label class="block space-y-1.5 text-sm font-medium text-gray-950 dark:text-white">
                                         <span>Missing claim behaviour</span>
                                         <x-filament::input.wrapper>
@@ -205,6 +222,7 @@
                                             @unless ($row['clear_supported']) This target does not support clearing, so its existing value would be preserved. @endunless
                                         </span>
                                     </label>
+                                    @endif
                                     <label class="block space-y-1.5 text-sm font-medium text-gray-950 dark:text-white">
                                         <span>Priority</span>
                                         <x-filament::input.wrapper>
@@ -245,7 +263,7 @@
                 <div class="mt-4 divide-y divide-warning-200 dark:divide-warning-400/20">
                     @foreach ($legacyMappings as $mapping)
                         <div class="flex items-center justify-between gap-4 py-3" wire:key="legacy-mapping-{{ $mapping['id'] }}">
-                            <p class="min-w-0 text-sm text-gray-700 dark:text-gray-200"><span class="font-mono">{{ $mapping['source_claim'] }}</span> <span aria-hidden="true">→</span> <span class="font-mono">{{ $mapping['target_attribute'] }}</span></p>
+                            <p class="min-w-0 text-sm text-gray-700 dark:text-gray-200"><span class="font-medium">{{ $mapping['source_type'] === 'static' ? 'Static' : 'Claim' }}:</span> <span class="font-mono">{{ $mapping['source_type'] === 'static' ? '(value hidden)' : $mapping['source_value'] }}</span> <span aria-hidden="true">→</span> <span class="font-mono">{{ $mapping['target_attribute'] }}</span></p>
                             <x-filament::icon-button icon="tabler-trash" color="danger" label="Remove legacy global mapping" wire:confirm="Remove this legacy global mapping?" wire:click="removeLegacyMapping({{ $mapping['id'] }})" />
                         </div>
                     @endforeach
@@ -266,7 +284,7 @@
                     @foreach ($unavailable as $index => $mapping)
                         <div class="uam-grid items-center gap-y-3 py-4" wire:key="unavailable-{{ $mapping['id'] }}">
                             <x-filament::input.wrapper>
-                                <x-filament::input aria-label="Source claim for unavailable target {{ $mapping['target_attribute'] }}" type="text" maxlength="512" wire:model="unavailable.{{ $index }}.source_claim" />
+                                <x-filament::input aria-label="Source value for unavailable target {{ $mapping['target_attribute'] }}" type="text" maxlength="512" wire:model="unavailable.{{ $index }}.source_value" />
                             </x-filament::input.wrapper>
                             <div class="flex justify-center text-warning-500" aria-hidden="true"><x-filament::icon icon="tabler-chevron-right" class="h-5 w-5" /></div>
                             <div class="flex items-center justify-between gap-3 px-4">

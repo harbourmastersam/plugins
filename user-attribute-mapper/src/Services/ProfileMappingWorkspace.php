@@ -4,6 +4,7 @@ namespace Boy132\UserAttributeMapper\Services;
 
 use Boy132\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
 use Boy132\UserAttributeMapper\Models\AttributeMapping;
+use Boy132\UserAttributeMapper\Enums\MappingSourceType;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -65,13 +66,15 @@ class ProfileMappingWorkspace
                     if (!$definition?->writableFromIdentity) continue;
 
                     foreach (($row['mappings'] ?? []) as $state) {
-                        $source = trim((string) ($state['source_claim'] ?? ''));
+                        $sourceType = MappingSourceType::tryFrom((string) ($state['source_type'] ?? '')) ?? MappingSourceType::Claim;
+                        $source = (string) ($state['source_value'] ?? '');
+                        if ($sourceType === MappingSourceType::Claim) $source = trim($source);
                         $id = isset($state['id']) ? (int) $state['id'] : null;
                         $mapping = $id ? $existing->get($id) : null;
                         if ($mapping && $mapping->target_attribute !== $definition->key) continue;
-                        if ($source === '') continue;
+                        if (strlen($source) === 0) continue;
 
-                        $values = $this->values($state, $provider, $definition->key, $source);
+                        $values = $this->values($state, $provider, $definition->key, $sourceType, $source);
                         if ($mapping) {
                             $mapping->fill($values)->save();
                         } else {
@@ -87,9 +90,11 @@ class ProfileMappingWorkspace
                 $id = isset($state['id']) ? (int) $state['id'] : 0;
                 $mapping = $existing->get($id);
                 if (!$mapping || $this->registry->get($mapping->target_attribute)?->writableFromIdentity) continue;
-                $source = trim((string) ($state['source_claim'] ?? ''));
-                if ($source === '') continue;
-                $mapping->fill($this->values($state, $provider, $mapping->target_attribute, $source))->save();
+                $sourceType = MappingSourceType::tryFrom((string) ($state['source_type'] ?? '')) ?? MappingSourceType::Claim;
+                $source = (string) ($state['source_value'] ?? '');
+                if ($sourceType === MappingSourceType::Claim) $source = trim($source);
+                if (strlen($source) === 0) continue;
+                $mapping->fill($this->values($state, $provider, $mapping->target_attribute, $sourceType, $source))->save();
                 $kept[] = $mapping->id;
             }
 
@@ -100,7 +105,7 @@ class ProfileMappingWorkspace
     /** @return array<string, mixed> */
     public function emptyMappingState(): array
     {
-        return ['id' => null, 'source_claim' => '', 'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100, 'description' => ''];
+        return ['id' => null, 'source_type' => MappingSourceType::Claim->value, 'source_value' => '', 'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100, 'description' => ''];
     }
 
     /** @return array<string, mixed> */
@@ -108,7 +113,8 @@ class ProfileMappingWorkspace
     {
         return [
             'id' => $mapping->id,
-            'source_claim' => $mapping->source_claim,
+            'source_type' => $mapping->source_type->value,
+            'source_value' => $mapping->source_value,
             'enabled' => $mapping->enabled,
             'missing_claim_behavior' => $mapping->missing_claim_behavior->value,
             'priority' => $mapping->priority,
@@ -117,11 +123,12 @@ class ProfileMappingWorkspace
     }
 
     /** @return array<string, mixed> */
-    private function values(array $state, string $provider, string $target, string $source): array
+    private function values(array $state, string $provider, string $target, MappingSourceType $sourceType, string $source): array
     {
         return [
             'provider' => $provider,
-            'source_claim' => $source,
+            'source_type' => $sourceType->value,
+            'source_value' => $source,
             'target_attribute' => $target,
             'enabled' => (bool) ($state['enabled'] ?? false),
             'missing_claim_behavior' => ($state['missing_claim_behavior'] ?? 'preserve') === 'clear' ? 'clear' : 'preserve',
