@@ -11,6 +11,7 @@ use HarbourmasterSam\UserAttributeMapper\Services\AttributeValueConverter;
 use HarbourmasterSam\UserAttributeMapper\Services\ClaimPathResolver;
 use HarbourmasterSam\UserAttributeMapper\Services\UserAttributeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 
 uses(RefreshDatabase::class);
 
@@ -138,3 +139,98 @@ it('keeps static mappings scoped to their provider', function (): void {
     $service->apply(new User(), 'port', []);
     $service->apply(new User(), 'staff', []);
 });
+
+it('logs only warnings in errors mode', function (): void {
+    config()->set('user-attribute-mapper.logging_mode', 'errors');
+    AttributeMapping::create([
+        'provider' => 'staff', 'source_value' => 'name', 'target_attribute' => 'missing.target',
+        'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100,
+    ]);
+    $registry = Mockery::mock(UserAttributeRegistryContract::class);
+    $registry->shouldReceive('get')->once()->andReturnNull();
+    Log::spy();
+
+    (new AttributeMappingService($registry, Mockery::mock(UserAttributeService::class), new ClaimPathResolver()))
+        ->apply(new User(), 'staff', ['name' => 'not-logged']);
+
+    Log::shouldNotHaveReceived('info');
+    Log::shouldHaveReceived('warning')->once()->with('Identity attribute mapping unavailable.', Mockery::on(
+        fn (array $context): bool => $context['result'] === 'unavailable',
+    ));
+});
+
+it('logs one correctly counted summary in normal mode', function (): void {
+    config()->set('user-attribute-mapper.logging_mode', 'normal');
+    foreach (['first', 'second'] as $source) {
+        AttributeMapping::create([
+            'provider' => 'staff', 'source_value' => $source, 'target_attribute' => "example.$source",
+            'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100,
+        ]);
+    }
+    $registry = Mockery::mock(UserAttributeRegistryContract::class);
+    $registry->shouldReceive('get')->twice()->andReturnUsing(fn (string $key) => new UserAttributeDefinition(
+        key: $key, owner: 'example', label: 'Value', type: AttributeType::String,
+        reader: fn () => null, writer: fn () => null, writableFromIdentity: true,
+    ));
+    $attributes = Mockery::mock(UserAttributeService::class);
+    $attributes->shouldReceive('setFromIdentity')->twice();
+    Log::spy();
+
+    (new AttributeMappingService($registry, $attributes, new ClaimPathResolver()))
+        ->apply(new User(), 'staff', ['first' => 'one', 'second' => 'two']);
+
+    Log::shouldHaveReceived('info')->once()->with('User attribute mapping completed.', Mockery::on(
+        fn (array $context): bool => $context['processed'] === 2
+            && $context['updated'] === 2 && $context['cleared'] === 0
+            && $context['missing'] === 0 && $context['unavailable'] === 0 && $context['invalid'] === 0,
+    ));
+    Log::shouldNotHaveReceived('info', ['Identity attribute mapping completed.', Mockery::any()]);
+});
+
+it('logs safe individual results and a summary in verbose mode', function (): void {
+    config()->set('user-attribute-mapper.logging_mode', 'verbose');
+    AttributeMapping::create([
+        'provider' => 'staff', 'source_type' => 'claim', 'source_value' => 'preferred_username',
+        'target_attribute' => 'example.name', 'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100,
+    ]);
+    AttributeMapping::create([
+        'provider' => 'staff', 'source_type' => 'static', 'source_value' => 'super-secret-example-value',
+        'target_attribute' => 'example.static', 'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100,
+    ]);
+    $registry = Mockery::mock(UserAttributeRegistryContract::class);
+    $registry->shouldReceive('get')->twice()->andReturnUsing(fn (string $key) => new UserAttributeDefinition(
+        key: $key, owner: 'example', label: 'Value', type: AttributeType::String,
+        reader: fn () => null, writer: fn () => null, writableFromIdentity: true,
+    ));
+    $attributes = Mockery::mock(UserAttributeService::class);
+    $attributes->shouldReceive('setFromIdentity')->twice();
+    Log::spy();
+
+    (new AttributeMappingService($registry, $attributes, new ClaimPathResolver()))
+        ->apply(new User(), 'staff', ['preferred_username' => 'private-claim-value']);
+
+    Log::shouldHaveReceived('info')->times(3);
+    Log::shouldHaveReceived('info')->once()->with('Identity attribute mapping completed.', Mockery::on(
+        fn (array $context): bool => ($context['source_path'] ?? null) === 'preferred_username'
+            && !str_contains(json_encode($context), 'private-claim-value'),
+    ));
+    Log::shouldHaveReceived('info')->once()->with('Identity attribute mapping completed.', Mockery::on(
+        fn (array $context): bool => $context['source_type'] === 'static'
+            && !array_key_exists('source_path', $context)
+            && !str_contains(json_encode($context), 'super-secret-example-value'),
+    ));
+    Log::shouldHaveReceived('info')->once()->with('User attribute mapping completed.', Mockery::on(
+        fn (array $context): bool => $context['processed'] === 2 && $context['updated'] === 2
+            && !str_contains(json_encode($context), 'super-secret-example-value'),
+    ));
+});
+
+it('does not log empty mapping runs in normal or verbose mode', function (string $mode): void {
+    config()->set('user-attribute-mapper.logging_mode', $mode);
+    Log::spy();
+
+    (new AttributeMappingService(Mockery::mock(UserAttributeRegistryContract::class), Mockery::mock(UserAttributeService::class), new ClaimPathResolver()))
+        ->apply(new User(), 'staff', []);
+
+    Log::shouldNotHaveReceived('info');
+})->with(['normal', 'verbose']);

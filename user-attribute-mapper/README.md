@@ -46,6 +46,22 @@ identity-writable. User `id` and `uuid` are available read-only. This is an
 allowlist: authentication secrets, administrator state, roles, permissions, and
 arbitrary model columns are never exposed.
 
+## Mapping logging
+
+Mapping logging can be selected in the plugin settings or with
+`USER_ATTRIBUTE_MAPPER_LOGGING_MODE`. The allowed values are `errors`, `normal`,
+and `verbose`:
+
+- **Errors only** logs only warnings and errors.
+- **Normal** logs one summary for each non-empty mapping run plus individual
+  warnings and errors. This is the default.
+- **Verbose** logs each successful or missing mapping result, a final summary,
+  and individual warnings and errors.
+
+Summaries contain only the user ID, provider, and the `processed`, `updated`,
+`cleared`, `missing`, `unavailable`, and `invalid` counters. Mapping values,
+including static source values, are never logged.
+
 External ID does not automatically imply that a user is externally managed. To
 enable that Pelican behavior, an administrator must explicitly map a boolean
 source claim to `pelican.is_managed_externally`. For example, an identity provider

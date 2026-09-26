@@ -6,6 +6,7 @@ use App\Models\User;
 use HarbourmasterSam\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
 use HarbourmasterSam\UserAttributeMapper\Enums\MissingClaimBehavior;
 use HarbourmasterSam\UserAttributeMapper\Enums\MappingSourceType;
+use HarbourmasterSam\UserAttributeMapper\Enums\MappingLoggingMode;
 use HarbourmasterSam\UserAttributeMapper\Data\ResolvedClaim;
 use HarbourmasterSam\UserAttributeMapper\Models\AttributeMapping;
 use Illuminate\Support\Facades\Log;
@@ -20,30 +21,57 @@ class AttributeMappingService
     {
         // Wildcard mappings are retained as legacy records, but are deliberately inactive:
         // claim schemas differ between providers, so only the authenticating provider applies.
-        AttributeMapping::query()->where('enabled', true)->where('provider', $provider)->orderBy('priority')->orderBy('id')->each(function (AttributeMapping $mapping) use ($user, $provider, $rawClaims): void {
+        $mappings = AttributeMapping::query()->where('enabled', true)->where('provider', $provider)->orderBy('priority')->orderBy('id')->get();
+        if ($mappings->isEmpty()) {
+            return;
+        }
+
+        $mode = $this->loggingMode();
+        $stats = ['processed' => 0, 'updated' => 0, 'cleared' => 0, 'missing' => 0, 'unavailable' => 0, 'invalid' => 0];
+
+        foreach ($mappings as $mapping) {
+            $stats['processed']++;
             $context = ['user_id' => $user->id, 'provider' => $provider, 'mapping_id' => $mapping->id, 'source_type' => $mapping->source_type->value, 'target_attribute' => $mapping->target_attribute];
             if ($mapping->source_type === MappingSourceType::Claim) {
                 $context['source_path'] = $mapping->source_value;
             }
             $definition = $this->registry->get($mapping->target_attribute);
             if ($definition === null || !$definition->writableFromIdentity) {
+                $stats['unavailable']++;
                 Log::warning('Identity attribute mapping unavailable.', $context + ['result' => 'unavailable']);
-                return;
+                continue;
             }
             $claim = $mapping->source_type === MappingSourceType::Static
                 ? new ResolvedClaim(present: true, value: $mapping->source_value)
                 : $this->claims->resolve($rawClaims, $mapping->source_value);
             if (!$claim->present) {
                 $cleared = $mapping->missing_claim_behavior === MissingClaimBehavior::Clear && $this->attributes->clearFromIdentity($user, $mapping->target_attribute);
-                Log::info('Identity attribute mapping completed.', $context + ['result' => $cleared ? 'updated' : 'missing']);
-                return;
+                $result = $cleared ? 'cleared' : 'missing';
+                $stats[$result]++;
+                if ($mode->logsIndividualResults()) {
+                    Log::info('Identity attribute mapping completed.', $context + ['result' => $result]);
+                }
+                continue;
             }
             try {
                 $this->attributes->setFromIdentity($user, $mapping->target_attribute, $claim->value);
-                Log::info('Identity attribute mapping completed.', $context + ['result' => 'updated']);
+                $stats['updated']++;
+                if ($mode->logsIndividualResults()) {
+                    Log::info('Identity attribute mapping completed.', $context + ['result' => 'updated']);
+                }
             } catch (Throwable $exception) {
+                $stats['invalid']++;
                 Log::warning('Identity attribute mapping failed.', $context + ['result' => 'invalid', 'exception' => $exception::class]);
             }
-        });
+        }
+
+        if ($mode->logsSummary()) {
+            Log::info('User attribute mapping completed.', ['user_id' => $user->id, 'provider' => $provider] + $stats);
+        }
+    }
+
+    private function loggingMode(): MappingLoggingMode
+    {
+        return MappingLoggingMode::resolve(config('user-attribute-mapper.logging_mode', MappingLoggingMode::Normal->value));
     }
 }
