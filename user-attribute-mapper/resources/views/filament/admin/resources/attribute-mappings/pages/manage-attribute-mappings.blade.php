@@ -128,15 +128,16 @@
                                         @elseif ($isStatic && in_array($row['type'], ['array', 'object']))
                                         <x-filament::input disabled value="Static values are unsupported for this target" />
                                         @else
-                                        <x-filament::input
+                                        <input
                                             id="source-{{ $modalId }}"
                                             type="{{ $isStatic && in_array($row['type'], ['integer', 'float']) ? 'number' : 'text' }}"
                                             @if ($isStatic && $row['type'] === 'integer') step="1" @elseif ($isStatic && $row['type'] === 'float') step="any" @endif
                                             maxlength="512"
                                             placeholder="{{ $isStatic ? 'Enter a static value…' : 'Choose an attribute or enter a claim path…' }}"
                                             aria-describedby="relationship-{{ $modalId }}"
-                                            wire:model="groups.{{ $groupIndex }}.rows.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"
-                                        />
+                                            wire:model.blur="groups.{{ $groupIndex }}.rows.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"
+                                            class="fi-input block w-full border-none bg-transparent py-1.5 text-base text-gray-950 outline-none transition duration-75 placeholder:text-gray-400 focus:ring-0 dark:text-white dark:placeholder:text-gray-500 sm:text-sm sm:leading-6"
+                                        >
                                         @endif
                                     </x-filament::input.wrapper>
                                     </div>
