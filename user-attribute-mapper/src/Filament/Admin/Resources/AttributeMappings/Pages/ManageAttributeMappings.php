@@ -2,17 +2,18 @@
 
 namespace HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages;
 
+use HarbourmasterSam\UserAttributeMapper\Enums\MappingSourceType;
 use HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\AttributeMappingResource;
 use HarbourmasterSam\UserAttributeMapper\Models\AttributeMapping;
-use HarbourmasterSam\UserAttributeMapper\Enums\MappingSourceType;
+use HarbourmasterSam\UserAttributeMapper\Models\AttributeMappingAudit;
 use HarbourmasterSam\UserAttributeMapper\OAuth\OAuthProviderResolver;
+use HarbourmasterSam\UserAttributeMapper\Services\MappingAuditService;
+use HarbourmasterSam\UserAttributeMapper\Services\MappingPreviewService;
 use HarbourmasterSam\UserAttributeMapper\Services\ProfileMappingWorkspace;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
-use HarbourmasterSam\UserAttributeMapper\Services\MappingPreviewService;
+use Illuminate\Support\Str;
 use JsonException;
-use HarbourmasterSam\UserAttributeMapper\Models\AttributeMappingAudit;
-use HarbourmasterSam\UserAttributeMapper\Services\MappingAuditService;
 
 class ManageAttributeMappings extends Page
 {
@@ -34,6 +35,7 @@ class ManageAttributeMappings extends Page
     public ?string $previewError = null;
     /** @var list<array<string, mixed>> */
     public array $mappingHistory = [];
+    public ?string $schemaError = null;
 
     public function getTitle(): string
     {
@@ -49,6 +51,13 @@ class ManageAttributeMappings extends Page
     {
         $this->providerOptions = $providers->options();
         $this->provider = (string) (array_key_first($this->providerOptions) ?? '');
+        try {
+            $workspace->ensureSchemaIsCurrent();
+        } catch (\InvalidArgumentException $exception) {
+            $this->schemaError = $exception->getMessage();
+
+            return;
+        }
         $this->loadLegacyMappings();
         $this->loadHistory();
 
@@ -103,15 +112,13 @@ class ManageAttributeMappings extends Page
         if ($type === null || !isset($this->groups[$group][$row]['mappings'][$mapping])) return;
 
         $state = &$this->groups[$group][$row]['mappings'][$mapping];
-        if (($state['source_type'] ?? MappingSourceType::Claim->value) === $type->value) return;
-
         $state['source_type'] = $type->value;
         $state['source_value'] = '';
     }
 
     public function addTransformation(string $group, int $row, int $mapping): void
     {
-        $this->groups[$group][$row]['mappings'][$mapping]['transforms'][] = ['type' => 'trim'];
+        $this->groups[$group][$row]['mappings'][$mapping]['transforms'][] = ['_ui_key' => (string) Str::uuid(), 'type' => 'trim'];
     }
 
     public function removeTransformation(string $group, int $row, int $mapping, int $transform): void

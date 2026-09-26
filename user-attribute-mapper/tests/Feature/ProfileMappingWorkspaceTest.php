@@ -38,6 +38,17 @@ function profileWorkspace(): ProfileMappingWorkspace
     return new ProfileMappingWorkspace($registry);
 }
 
+/** @return array{0: array<string, mixed>, 1: int} */
+function profileRow(array $groups, string $target): array
+{
+    $index = collect($groups['Pelican'])->search(fn (array $row): bool => $row['key'] === $target);
+    if ($index === false) {
+        throw new LogicException("Missing profile row [{$target}].");
+    }
+
+    return [$groups['Pelican'][$index], $index];
+}
+
 it('builds target-driven dynamic groups and excludes read-only attributes', function (): void {
     $state = profileWorkspace()->load('authentik');
 
@@ -117,6 +128,133 @@ it('clears only the staged source value when its source type changes', function 
     expect($page->groups['Pelican'][0]['mappings'][0])->toMatchArray([
         'source_type' => 'static', 'source_value' => '', 'enabled' => false,
         'priority' => 25, 'description' => 'Keep me', 'missing_claim_behavior' => 'clear',
+    ]);
+});
+
+it('gives staged mappings and transformations stable non-persisted UI identities', function (): void {
+    $workspace = profileWorkspace();
+    $empty = $workspace->emptyMappingState();
+    $page = new \HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+    $page->groups = ['Pelican' => [['mappings' => [$empty]]]];
+
+    $page->addTransformation('Pelican', 0, 0);
+    $firstMappingKey = $page->groups['Pelican'][0]['mappings'][0]['_ui_key'];
+    $firstTransformKey = $page->groups['Pelican'][0]['mappings'][0]['transforms'][0]['_ui_key'];
+    $page->addMapping('Pelican', 0, $workspace);
+    $page->removeMapping('Pelican', 0, 0);
+
+    expect($firstMappingKey)->toBeString()->not->toBe('')
+        ->and($firstTransformKey)->toBeString()->not->toBe('')
+        ->and($page->groups['Pelican'][0]['mappings'][0]['_ui_key'])->not->toBe($firstMappingKey);
+});
+
+it('edits existing component state and persists every mapping editor field', function (): void {
+    $workspace = profileWorkspace();
+    AttributeMapping::create([
+        'provider' => 'authentik', 'source_type' => 'claim', 'source_value' => 'preferred_username',
+        'target_attribute' => 'pelican.username', 'enabled' => true, 'missing_claim_behavior' => 'preserve',
+        'priority' => 10, 'description' => 'Old', 'transforms' => [],
+    ]);
+    $page = new \HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+    $page->provider = 'authentik';
+    $page->groups = $workspace->load('authentik')['groups'];
+    [, $username] = profileRow($page->groups, 'pelican.username');
+    $page->groups['Pelican'][$username]['mappings'][0]['source_value'] = 'username';
+    $page->groups['Pelican'][$username]['mappings'][0]['enabled'] = false;
+    $page->groups['Pelican'][$username]['mappings'][0]['priority'] = 30;
+    $page->groups['Pelican'][$username]['mappings'][0]['description'] = 'New';
+    $page->addTransformation('Pelican', $username, 0);
+    $page->addTransformation('Pelican', $username, 0);
+    $page->groups['Pelican'][$username]['mappings'][0]['transforms'][1]['type'] = 'lowercase';
+
+    $providers = Mockery::mock(\HarbourmasterSam\UserAttributeMapper\OAuth\OAuthProviderResolver::class);
+    $providers->shouldReceive('options')->once()->andReturn(['authentik' => 'Authentik']);
+    $page->save($providers, $workspace);
+    [$row] = profileRow($page->groups, 'pelican.username');
+    expect($row['mappings'][0])->toMatchArray([
+        'source_type' => 'claim', 'source_value' => 'username', 'enabled' => false,
+        'priority' => 30, 'description' => 'New',
+    ])->and(array_column($row['mappings'][0]['transforms'], 'type'))->toBe(['trim', 'lowercase']);
+
+    $page->groups['Pelican'][$username]['mappings'][0]['transforms'][1]['type'] = 'uppercase';
+    $workspace->save('authentik', $page->groups, []);
+    [$row] = profileRow($workspace->load('authentik')['groups'], 'pelican.username');
+    expect(array_column($row['mappings'][0]['transforms'], 'type'))->toBe(['trim', 'uppercase'])
+        ->and($row['mappings'][0]['transforms'][0])->toHaveKey('_ui_key');
+});
+
+it('edits an existing boolean static value from true to false and reloads it', function (): void {
+    $workspace = profileWorkspace();
+    AttributeMapping::create([
+        'provider' => 'authentik', 'source_type' => 'static', 'source_value' => 'true',
+        'target_attribute' => 'pelican.is_managed_externally', 'enabled' => true,
+        'missing_claim_behavior' => 'preserve', 'priority' => 10,
+    ]);
+    $state = $workspace->load('authentik');
+    [, $managed] = profileRow($state['groups'], 'pelican.is_managed_externally');
+    $state['groups']['Pelican'][$managed]['mappings'][0]['source_value'] = 'false';
+    $workspace->save('authentik', $state['groups'], []);
+
+    expect(AttributeMapping::where('target_attribute', 'pelican.is_managed_externally')->value('source_value'))->toBe('false');
+    [$row] = profileRow($workspace->load('authentik')['groups'], 'pelican.is_managed_externally');
+    expect($row['mappings'][0]['source_value'])->toBe('false');
+});
+
+it('keeps fallback identities aligned after editing and removing an earlier mapping', function (): void {
+    $workspace = profileWorkspace();
+    foreach ([['A', 10], ['B', 20], ['C', 30]] as [$source, $priority]) {
+        AttributeMapping::create([
+            'provider' => 'authentik', 'source_type' => 'claim', 'source_value' => $source,
+            'target_attribute' => 'pelican.username', 'enabled' => true,
+            'missing_claim_behavior' => 'preserve', 'priority' => $priority,
+        ]);
+    }
+    $page = new \HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+    $page->groups = $workspace->load('authentik')['groups'];
+    [, $username] = profileRow($page->groups, 'pelican.username');
+    $cId = $page->groups['Pelican'][$username]['mappings'][2]['id'];
+    $cKey = $page->groups['Pelican'][$username]['mappings'][2]['_ui_key'];
+    $page->removeMapping('Pelican', $username, 1);
+    $page->groups['Pelican'][$username]['mappings'][1]['source_value'] = 'upn';
+    $workspace->save('authentik', $page->groups, []);
+
+    $saved = AttributeMapping::where('target_attribute', 'pelican.username')->orderBy('priority')->get();
+    expect($saved->pluck('source_value')->all())->toBe(['A', 'upn'])
+        ->and($saved->pluck('id')->all())->toBe([$saved[0]->id, $cId]);
+    [$row] = profileRow($workspace->load('authentik')['groups'], 'pelican.username');
+    expect($row['mappings'][1]['_ui_key'])->toBe($cKey);
+});
+
+it('preserves staged editor values when validation fails', function (): void {
+    $workspace = profileWorkspace();
+    $page = new \HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+    $page->groups = $workspace->load('authentik')['groups'];
+    [, $managed] = profileRow($page->groups, 'pelican.is_managed_externally');
+    $page->changeMappingSourceType('Pelican', $managed, 0, 'static');
+    $page->groups['Pelican'][$managed]['mappings'][0]['source_value'] = 'not-a-boolean';
+    $before = $page->groups;
+
+    expect(fn () => $workspace->save('authentik', $page->groups, []))->toThrow(InvalidArgumentException::class)
+        ->and($page->groups)->toBe($before)
+        ->and(AttributeMapping::query()->count())->toBe(0);
+});
+
+it('keeps source type and empty value state synchronized in both directions', function (): void {
+    $workspace = profileWorkspace();
+    $page = new \HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+    $page->groups = $workspace->load('authentik')['groups'];
+    [, $managed] = profileRow($page->groups, 'pelican.is_managed_externally');
+    $page->groups['Pelican'][$managed]['mappings'][0]['source_value'] = 'managed_claim';
+
+    $page->changeMappingSourceType('Pelican', $managed, 0, 'static');
+    expect($page->groups['Pelican'][$managed]['mappings'][0])->toMatchArray([
+        'source_type' => 'static', 'source_value' => '',
+    ]);
+
+    $page->groups['Pelican'][$managed]['mappings'][0]['source_value'] = 'false';
+    $page->changeMappingSourceType('Pelican', $managed, 0, 'claim');
+    expect($page->groups['Pelican'][$managed]['mappings'][0])->toMatchArray([
+        'source_type' => 'claim', 'source_value' => '',
     ]);
 });
 

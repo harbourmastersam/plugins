@@ -6,6 +6,8 @@ User Attribute Mapper adds an Okta-style, provider-neutral profile mapping layer
 
 Install it as a normal Pelican plugin and run Pelican's plugin migrations. In the admin panel open **Attribute Mappings**, create a mapping, and select:
 
+When upgrading from a version before 1.1.0, complete Pelican's normal plugin update/install process and its migration step; migrations `003_add_mapping_transforms.php` and `004_create_user_attribute_mapping_audits.php` must both be applied. If the mapping page reports an out-of-date schema, repeat that update/install flow for User Attribute Mapper, run `php artisan optimize:clear`, and reload the page. Do not continue editing against a partially migrated schema.
+
 1. a currently registered and enabled provider;
 2. a source type and either a dot-separated claim path such as `pelican_limits.cpu` or a static text value;
 3. a currently registered, identity-writable target;

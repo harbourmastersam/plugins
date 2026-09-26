@@ -48,6 +48,13 @@
         x-on:beforeunload.window="if (dirty) { $event.preventDefault(); $event.returnValue = '' }"
         class="uam-workspace"
     >
+        @if ($schemaError)
+            <div class="mb-6 rounded-xl border border-danger-300 bg-danger-50 p-4 text-sm text-danger-700 dark:border-danger-400/30 dark:bg-danger-400/10 dark:text-danger-300" role="alert">
+                <p class="font-semibold">Mapping editor unavailable</p>
+                <p class="mt-1">{{ $schemaError }}</p>
+                <p class="mt-2">Complete the normal Pelican plugin update/install flow, including its migration step, then run <code>php artisan optimize:clear</code> and reload this page.</p>
+            </div>
+        @endif
         @if ($provider === '')
             <div class="uam-panel px-6 py-12 text-center">
                 <x-filament::icon icon="tabler-plug-connected-x" class="mx-auto h-10 w-10 text-gray-400" />
@@ -99,24 +106,26 @@
                                 $isStatic = ($mapping['source_type'] ?? 'claim') === 'static';
                                 $isMapped = array_key_exists('source_value', $mapping) && strlen((string) $mapping['source_value']) > 0;
                                 $isEnabled = $isMapped && ($mapping['enabled'] ?? true);
-                                $modalId = 'mapping-settings-'.md5($group.'-'.$row['key'].'-'.$mappingIndex);
+                                $mappingKey = $mapping['_ui_key'] ?? (isset($mapping['id']) ? 'mapping-'.$mapping['id'] : 'missing-key-'.$mappingIndex);
+                                $modalId = 'mapping-settings-'.md5($group.'-'.$row['key'].'-'.$mappingKey);
                             @endphp
-                            <div class="uam-grid uam-row" wire:key="mapping-{{ $row['key'] }}-{{ $mapping['id'] ?? 'new-'.$mappingIndex }}">
+                            <div class="uam-grid uam-row" wire:key="mapping-{{ $row['key'] }}-{{ $mappingKey }}">
                                 <div class="uam-source">
                                     <label for="source-{{ $modalId }}" class="sr-only">{{ $isStatic ? 'Static value' : 'Identity provider claim' }} for {{ $row['label'] }}</label>
                                     <div class="uam-source-controls">
                                     <x-filament::input.wrapper>
                                         <x-filament::input.select
                                             aria-label="Source type for {{ $row['label'] }}"
+                                            wire:model="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_type"
                                             wire:change="changeMappingSourceType({{ \Illuminate\Support\Js::from($group) }}, {{ $rowIndex }}, {{ $mappingIndex }}, $event.target.value)"
                                         >
-                                            <option value="claim" @selected(!$isStatic)>Claim</option>
-                                            <option value="static" @selected($isStatic)>Static</option>
+                                            <option value="claim">Claim</option>
+                                            <option value="static">Static</option>
                                         </x-filament::input.select>
                                     </x-filament::input.wrapper>
                                     <x-filament::input.wrapper>
                                         @if ($isStatic && $row['type'] === 'boolean')
-                                        <x-filament::input.select id="source-{{ $modalId }}" wire:model.live="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"><option value="true">True</option><option value="false">False</option></x-filament::input.select>
+                                        <x-filament::input.select id="source-{{ $modalId }}" wire:model="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"><option value="">Select a value...</option><option value="true">True</option><option value="false">False</option></x-filament::input.select>
                                         @elseif ($isStatic && in_array($row['type'], ['array', 'object']))
                                         <x-filament::input disabled value="Static values are unsupported for this target" />
                                         @else
@@ -127,7 +136,7 @@
                                             maxlength="512"
                                             placeholder="{{ $isStatic ? 'Enter a static value…' : 'Choose an attribute or enter a claim path…' }}"
                                             aria-describedby="relationship-{{ $modalId }}"
-                                            wire:model.live.debounce.300ms="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"
+                                            wire:model.blur="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.source_value"
                                         />
                                         @endif
                                     </x-filament::input.wrapper>
@@ -237,7 +246,7 @@
                                         <div class="flex items-center justify-between"><span class="text-sm font-medium">Transformations</span><x-filament::button size="xs" color="gray" wire:click="addTransformation({{ \Illuminate\Support\Js::from($group) }}, {{ $rowIndex }}, {{ $mappingIndex }})">Add transformation</x-filament::button></div>
                                         <p class="text-xs text-gray-500">Applied in order before conversion. Only safe literal string operations are available.</p>
                                         @foreach (($mapping['transforms'] ?? []) as $transformIndex => $transform)
-                                        <div class="grid grid-cols-[8rem,1fr,auto] gap-2" wire:key="transform-{{ $modalId }}-{{ $transformIndex }}">
+                                        <div class="grid grid-cols-[8rem,1fr,auto] gap-2" wire:key="transform-{{ $modalId }}-{{ $transform['_ui_key'] ?? 'missing-'.$transformIndex }}">
                                             <x-filament::input.select wire:model.live="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.transforms.{{ $transformIndex }}.type"><option value="trim">Trim</option><option value="lowercase">Lowercase</option><option value="uppercase">Uppercase</option><option value="prefix">Prefix</option><option value="suffix">Suffix</option><option value="replace">Replace</option></x-filament::input.select>
                                             <div class="flex gap-2">
                                                 @if (in_array($transform['type'] ?? '', ['prefix', 'suffix']))<x-filament::input placeholder="Text" wire:model="groups.{{ $group }}.{{ $rowIndex }}.mappings.{{ $mappingIndex }}.transforms.{{ $transformIndex }}.value" />
