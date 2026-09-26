@@ -36,7 +36,7 @@ it('applies only mappings belonging to the authenticating provider', function ()
     $attributes = Mockery::mock(UserAttributeService::class);
     $attributes->shouldReceive('setFromIdentity')->once()->withArgs(
         fn (User $user, string $target, mixed $value): bool => $target === 'pelican.username' && $value === 'staff-value',
-    );
+    )->andReturn(\HarbourmasterSam\UserAttributeMapper\Enums\AttributeMutationResult::Updated);
 
     (new AttributeMappingService($registry, $attributes, new ClaimPathResolver()))->apply(
         new User(),
@@ -133,7 +133,7 @@ it('keeps static mappings scoped to their provider', function (): void {
         key: 'example.flag', owner: 'example', label: 'Flag', type: AttributeType::Boolean,
         reader: fn () => null, writer: fn () => null, writableFromIdentity: true,
     ));
-    $attributes->shouldReceive('setFromIdentity')->once()->with(Mockery::type(User::class), 'example.flag', 'true');
+    $attributes->shouldReceive('setFromIdentity')->once()->with(Mockery::type(User::class), 'example.flag', 'true')->andReturn(\HarbourmasterSam\UserAttributeMapper\Enums\AttributeMutationResult::Updated);
     $service = new AttributeMappingService($registry, $attributes, new ClaimPathResolver());
 
     $service->apply(new User(), 'port', []);
@@ -173,7 +173,7 @@ it('logs one correctly counted summary in normal mode', function (): void {
         reader: fn () => null, writer: fn () => null, writableFromIdentity: true,
     ));
     $attributes = Mockery::mock(UserAttributeService::class);
-    $attributes->shouldReceive('setFromIdentity')->twice();
+    $attributes->shouldReceive('setFromIdentity')->twice()->andReturn(\HarbourmasterSam\UserAttributeMapper\Enums\AttributeMutationResult::Updated);
     Log::spy();
 
     (new AttributeMappingService($registry, $attributes, new ClaimPathResolver()))
@@ -203,7 +203,7 @@ it('logs safe individual results and a summary in verbose mode', function (): vo
         reader: fn () => null, writer: fn () => null, writableFromIdentity: true,
     ));
     $attributes = Mockery::mock(UserAttributeService::class);
-    $attributes->shouldReceive('setFromIdentity')->twice();
+    $attributes->shouldReceive('setFromIdentity')->twice()->andReturn(\HarbourmasterSam\UserAttributeMapper\Enums\AttributeMutationResult::Updated);
     Log::spy();
 
     (new AttributeMappingService($registry, $attributes, new ClaimPathResolver()))
@@ -234,3 +234,36 @@ it('does not log empty mapping runs in normal or verbose mode', function (string
 
     Log::shouldNotHaveReceived('info');
 })->with(['normal', 'verbose']);
+
+it('uses mappings as an ordered fallback chain and stops after the first present source', function (): void {
+    foreach ([['preferred_username', 10], ['email', 20]] as [$source, $priority]) {
+        AttributeMapping::create(['provider' => 'staff', 'source_value' => $source, 'target_attribute' => 'example.name',
+            'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => $priority]);
+    }
+    $definition = new UserAttributeDefinition(key: 'example.name', owner: 'example', label: 'Name', type: AttributeType::String,
+        reader: fn () => null, writer: fn () => null, writableFromIdentity: true);
+    $registry = Mockery::mock(UserAttributeRegistryContract::class);
+    $registry->shouldReceive('get')->once()->with('example.name')->andReturn($definition);
+    $attributes = Mockery::mock(UserAttributeService::class);
+    $attributes->shouldReceive('setFromIdentity')->once()->with(Mockery::type(User::class), 'example.name', 'sam')
+        ->andReturn(\HarbourmasterSam\UserAttributeMapper\Enums\AttributeMutationResult::Updated);
+
+    (new AttributeMappingService($registry, $attributes, new ClaimPathResolver()))->apply(new User(), 'staff', [
+        'preferred_username' => 'sam', 'email' => 'sam@example.com',
+    ]);
+});
+
+it('uses a fallback only when earlier claims are absent', function (): void {
+    foreach ([['preferred_username', 10], ['email', 20]] as [$source, $priority]) {
+        AttributeMapping::create(['provider' => 'staff', 'source_value' => $source, 'target_attribute' => 'example.name',
+            'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => $priority]);
+    }
+    $definition = new UserAttributeDefinition(key: 'example.name', owner: 'example', label: 'Name', type: AttributeType::String,
+        reader: fn () => null, writer: fn () => null, writableFromIdentity: true);
+    $registry = Mockery::mock(UserAttributeRegistryContract::class);
+    $registry->shouldReceive('get')->once()->andReturn($definition);
+    $attributes = Mockery::mock(UserAttributeService::class);
+    $attributes->shouldReceive('setFromIdentity')->once()->with(Mockery::type(User::class), 'example.name', 'sam@example.com')
+        ->andReturn(\HarbourmasterSam\UserAttributeMapper\Enums\AttributeMutationResult::Updated);
+    (new AttributeMappingService($registry, $attributes, new ClaimPathResolver()))->apply(new User(), 'staff', ['email' => 'sam@example.com']);
+});

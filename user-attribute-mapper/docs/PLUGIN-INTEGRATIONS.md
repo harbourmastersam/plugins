@@ -168,3 +168,9 @@ The stable keys allow native support to pick up those mappings without recreatio
 3. Never submit plugin-specific compatibility code to `user-attribute-mapper` itself.
 
 A bridge PR must document ownership, keys, supported upstream capabilities, storage behavior, and upgrade strategy. It must test exact registered keys and metadata; validation failures; reader, writer, missing-row defaults, preservation of unrelated fields, and valid clearing; absent/disabled optional dependencies where practical; and equivalent final registration across plugin load orders. It must also prove that an unreviewed future fillable field cannot become registered automatically.
+
+## Idempotence and fallback chains
+
+By default the mapper normalises the current reader value and incoming value to the declared type and skips an equal write. Writers with intentional side effects can set `compareBeforeWrite: false` on `UserAttributeDefinition`; that writer will always run. Clearers are likewise skipped when the reader already returns `null` under the default comparison policy.
+
+Multiple mappings for one definition are a priority/ID ordered fallback chain. The first present candidate wins, and an invalid present candidate stops the chain. The primary candidate alone controls what happens after every claim candidate is absent. Preview uses the same resolution, fixed safe string transformations, conversion, and rules without invoking integration callbacks. Static configuration, transformation arguments, and preview values are never logged.

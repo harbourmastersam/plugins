@@ -25,6 +25,7 @@ final readonly class UserAttributeDefinition
         public bool $sensitive = false,
         public bool $privileged = false,
         public array $rules = [],
+        public bool $compareBeforeWrite = true,
     ) {
         if (!preg_match('/^[a-z0-9][a-z0-9-]*\.[a-zA-Z0-9_.-]+$/', $key)) {
             throw new InvalidArgumentException("Attribute key [$key] must be globally namespaced as <owner>.<attribute>.");

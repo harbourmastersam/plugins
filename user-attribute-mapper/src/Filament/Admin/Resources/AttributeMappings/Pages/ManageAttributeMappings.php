@@ -9,6 +9,10 @@ use HarbourmasterSam\UserAttributeMapper\OAuth\OAuthProviderResolver;
 use HarbourmasterSam\UserAttributeMapper\Services\ProfileMappingWorkspace;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
+use HarbourmasterSam\UserAttributeMapper\Services\MappingPreviewService;
+use JsonException;
+use HarbourmasterSam\UserAttributeMapper\Models\AttributeMappingAudit;
+use HarbourmasterSam\UserAttributeMapper\Services\MappingAuditService;
 
 class ManageAttributeMappings extends Page
 {
@@ -24,6 +28,12 @@ class ManageAttributeMappings extends Page
     public array $unavailable = [];
     /** @var array<int, array{id: int, source_type: string, source_value: string, target_attribute: string}> */
     public array $legacyMappings = [];
+    public string $sampleClaims = "{\n    \"preferred_username\": \"sam\",\n    \"email\": \"sam@example.com\"\n}";
+    /** @var list<array<string, mixed>> */
+    public array $previewResults = [];
+    public ?string $previewError = null;
+    /** @var list<array<string, mixed>> */
+    public array $mappingHistory = [];
 
     public function getTitle(): string
     {
@@ -40,6 +50,7 @@ class ManageAttributeMappings extends Page
         $this->providerOptions = $providers->options();
         $this->provider = (string) (array_key_first($this->providerOptions) ?? '');
         $this->loadLegacyMappings();
+        $this->loadHistory();
 
         if ($this->provider !== '') {
             $this->loadMappings($workspace);
@@ -59,7 +70,10 @@ class ManageAttributeMappings extends Page
 
     public function addMapping(string $group, int $row, ProfileMappingWorkspace $workspace): void
     {
-        $this->groups[$group][$row]['mappings'][] = $workspace->emptyMappingState();
+        $priorities = array_column($this->groups[$group][$row]['mappings'], 'priority');
+        $state = $workspace->emptyMappingState();
+        $state['priority'] = ($priorities === [] ? 0 : max(array_map('intval', $priorities))) + 10;
+        $this->groups[$group][$row]['mappings'][] = $state;
     }
 
     public function removeMapping(string $group, int $row, int $mapping): void
@@ -95,6 +109,25 @@ class ManageAttributeMappings extends Page
         $state['source_value'] = '';
     }
 
+    public function addTransformation(string $group, int $row, int $mapping): void
+    {
+        $this->groups[$group][$row]['mappings'][$mapping]['transforms'][] = ['type' => 'trim'];
+    }
+
+    public function removeTransformation(string $group, int $row, int $mapping, int $transform): void
+    {
+        unset($this->groups[$group][$row]['mappings'][$mapping]['transforms'][$transform]);
+        $this->groups[$group][$row]['mappings'][$mapping]['transforms'] = array_values($this->groups[$group][$row]['mappings'][$mapping]['transforms']);
+    }
+
+    public function moveTransformation(string $group, int $row, int $mapping, int $transform, int $direction): void
+    {
+        $items = &$this->groups[$group][$row]['mappings'][$mapping]['transforms'];
+        $destination = $transform + $direction;
+        if (!isset($items[$transform], $items[$destination])) return;
+        [$items[$transform], $items[$destination]] = [$items[$destination], $items[$transform]];
+    }
+
     public function removeUnavailable(int $index): void
     {
         unset($this->unavailable[$index]);
@@ -111,16 +144,40 @@ class ManageAttributeMappings extends Page
         }
 
         $this->providerOptions = $available;
-        $workspace->save($this->provider, $this->groups, $this->unavailable);
+        try {
+            $workspace->save($this->provider, $this->groups, $this->unavailable);
+        } catch (\InvalidArgumentException $exception) {
+            Notification::make()->title('Mappings were not saved')->body($exception->getMessage())->danger()->send();
+            return;
+        }
         $this->loadMappings($workspace);
+        $this->loadHistory();
         $this->dispatch('mapping-workspace-saved');
         Notification::make()->title('Mappings saved')->success()->send();
     }
 
-    public function removeLegacyMapping(int $id): void
+    public function testMappings(MappingPreviewService $preview): void
     {
-        AttributeMapping::query()->where('provider', '*')->whereKey($id)->delete();
+        $this->previewError = null;
+        $this->previewResults = [];
+        try {
+            $claims = json_decode($this->sampleClaims, true, 512, JSON_THROW_ON_ERROR);
+            if (!is_array($claims) || array_is_list($claims)) throw new JsonException('Sample claims must be a JSON object.');
+            $this->previewResults = $preview->preview($this->groups, $claims);
+        } catch (JsonException $exception) {
+            $this->previewError = 'Invalid sample JSON: '.$exception->getMessage();
+        }
+    }
+
+    public function removeLegacyMapping(int $id, MappingAuditService $audit): void
+    {
+        $mapping = AttributeMapping::query()->where('provider', '*')->whereKey($id)->first();
+        if ($mapping) {
+            $audit->record('*', [['operation' => 'removed', 'mapping_id' => $mapping->id, 'target_attribute' => $mapping->target_attribute, 'source_type' => $mapping->source_type->value] ], auth()->id(), 'legacy_mapping_removed');
+            $mapping->delete();
+        }
         $this->loadLegacyMappings();
+        $this->loadHistory();
         Notification::make()->title('Legacy global mapping removed')->success()->send();
     }
 
@@ -141,5 +198,14 @@ class ManageAttributeMappings extends Page
                 'source_value' => $mapping->source_value,
                 'target_attribute' => $mapping->target_attribute,
             ])->all();
+    }
+
+    private function loadHistory(): void
+    {
+        $this->mappingHistory = AttributeMappingAudit::query()->latest('id')->limit(25)->get()->map(fn (AttributeMappingAudit $audit) => [
+            'created_at' => $audit->created_at?->toDateTimeString(), 'actor_id' => $audit->actor_id,
+            'provider' => $audit->provider, 'action' => $audit->action,
+            'targets' => collect($audit->changes)->pluck('target_attribute')->filter()->unique()->values()->all(),
+        ])->all();
     }
 }
