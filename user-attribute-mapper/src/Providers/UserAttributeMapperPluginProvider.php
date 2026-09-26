@@ -1,15 +1,15 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Providers;
+namespace HarbourmasterSam\UserAttributeMapper\Providers;
 
-use Boy132\UserAttributeMapper\Attributes\PelicanUserAttributeProvider;
-use Boy132\UserAttributeMapper\Console\Commands\InspectUserAttributeRegistryCommand;
-use Boy132\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
-use Boy132\UserAttributeMapper\Events\RegisterUserAttributes;
-use Boy132\UserAttributeMapper\Http\Middleware\CaptureOAuthClaims;
-use Boy132\UserAttributeMapper\Listeners\SyncMappedAttributes;
-use Boy132\UserAttributeMapper\OAuth\OAuthClaimContext;
-use Boy132\UserAttributeMapper\Services\UserAttributeRegistry;
+use HarbourmasterSam\UserAttributeMapper\Attributes\PelicanUserAttributeProvider;
+use HarbourmasterSam\UserAttributeMapper\Console\Commands\InspectUserAttributeRegistryCommand;
+use HarbourmasterSam\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
+use HarbourmasterSam\UserAttributeMapper\Events\RegisterUserAttributes;
+use HarbourmasterSam\UserAttributeMapper\Http\Middleware\CaptureOAuthClaims;
+use HarbourmasterSam\UserAttributeMapper\Listeners\SyncMappedAttributes;
+use HarbourmasterSam\UserAttributeMapper\OAuth\OAuthClaimContext;
+use HarbourmasterSam\UserAttributeMapper\Services\UserAttributeRegistry;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;

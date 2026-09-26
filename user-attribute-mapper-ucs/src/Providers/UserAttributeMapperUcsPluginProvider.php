@@ -10,7 +10,7 @@ final class UserAttributeMapperUcsPluginProvider extends ServiceProvider
     public function register(): void
     {
         // A string listener does not autoload the optional mapper dependency.
-        $eventClass = 'Boy132\\UserAttributeMapper\\Events\\RegisterUserAttributes';
+        $eventClass = 'HarbourmasterSam\\UserAttributeMapper\\Events\\RegisterUserAttributes';
 
         $this->app['events']->listen($eventClass, function (object $event): void {
             if (!$this->ucsIsAvailableAndEnabled()) {

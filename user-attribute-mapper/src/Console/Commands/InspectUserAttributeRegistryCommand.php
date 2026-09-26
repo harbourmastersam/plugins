@@ -1,9 +1,9 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Console\Commands;
+namespace HarbourmasterSam\UserAttributeMapper\Console\Commands;
 
-use Boy132\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
-use Boy132\UserAttributeMapper\Events\RegisterUserAttributes;
+use HarbourmasterSam\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
+use HarbourmasterSam\UserAttributeMapper\Events\RegisterUserAttributes;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Events\Dispatcher;
 

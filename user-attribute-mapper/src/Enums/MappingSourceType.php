@@ -1,6 +1,6 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Enums;
+namespace HarbourmasterSam\UserAttributeMapper\Enums;
 
 enum MappingSourceType: string
 {

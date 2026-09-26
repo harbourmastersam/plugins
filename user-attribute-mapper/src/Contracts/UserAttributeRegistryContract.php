@@ -1,8 +1,8 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Contracts;
+namespace HarbourmasterSam\UserAttributeMapper\Contracts;
 
-use Boy132\UserAttributeMapper\Data\UserAttributeDefinition;
+use HarbourmasterSam\UserAttributeMapper\Data\UserAttributeDefinition;
 use Illuminate\Support\Collection;
 
 interface UserAttributeRegistryContract

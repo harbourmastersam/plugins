@@ -53,7 +53,7 @@ my-plugin/
 Subscribe during the service provider's `register()` phase, before the mapper's end-of-bootstrap registration dispatch. Use strings and resolve the mapper-specific class inside the listener:
 
 ```php
-$eventClass = 'Boy132\\UserAttributeMapper\\Events\\RegisterUserAttributes';
+$eventClass = 'HarbourmasterSam\\UserAttributeMapper\\Events\\RegisterUserAttributes';
 
 $this->app['events']->listen($eventClass, function (object $event): void {
     $provider = 'Vendor\\MyPlugin\\Integrations\\UserAttributeMapper\\MyPluginAttributeProvider';

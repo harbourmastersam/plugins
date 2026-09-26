@@ -1,13 +1,13 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Services;
+namespace HarbourmasterSam\UserAttributeMapper\Services;
 
 use App\Models\User;
-use Boy132\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
-use Boy132\UserAttributeMapper\Enums\MissingClaimBehavior;
-use Boy132\UserAttributeMapper\Enums\MappingSourceType;
-use Boy132\UserAttributeMapper\Data\ResolvedClaim;
-use Boy132\UserAttributeMapper\Models\AttributeMapping;
+use HarbourmasterSam\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
+use HarbourmasterSam\UserAttributeMapper\Enums\MissingClaimBehavior;
+use HarbourmasterSam\UserAttributeMapper\Enums\MappingSourceType;
+use HarbourmasterSam\UserAttributeMapper\Data\ResolvedClaim;
+use HarbourmasterSam\UserAttributeMapper\Models\AttributeMapping;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 

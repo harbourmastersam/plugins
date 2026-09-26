@@ -1,12 +1,12 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages;
+namespace HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages;
 
-use Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\AttributeMappingResource;
-use Boy132\UserAttributeMapper\Models\AttributeMapping;
-use Boy132\UserAttributeMapper\Enums\MappingSourceType;
-use Boy132\UserAttributeMapper\OAuth\OAuthProviderResolver;
-use Boy132\UserAttributeMapper\Services\ProfileMappingWorkspace;
+use HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\AttributeMappingResource;
+use HarbourmasterSam\UserAttributeMapper\Models\AttributeMapping;
+use HarbourmasterSam\UserAttributeMapper\Enums\MappingSourceType;
+use HarbourmasterSam\UserAttributeMapper\OAuth\OAuthProviderResolver;
+use HarbourmasterSam\UserAttributeMapper\Services\ProfileMappingWorkspace;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\Page;
 

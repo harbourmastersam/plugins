@@ -1,11 +1,11 @@
 <?php
 
-use Boy132\UserAttributeMapper\Attributes\PelicanUserAttributeProvider;
-use Boy132\UserAttributeMapper\Data\UserAttributeDefinition;
-use Boy132\UserAttributeMapper\Enums\AttributeType;
-use Boy132\UserAttributeMapper\Models\AttributeMapping;
-use Boy132\UserAttributeMapper\Services\ProfileMappingWorkspace;
-use Boy132\UserAttributeMapper\Services\UserAttributeRegistry;
+use HarbourmasterSam\UserAttributeMapper\Attributes\PelicanUserAttributeProvider;
+use HarbourmasterSam\UserAttributeMapper\Data\UserAttributeDefinition;
+use HarbourmasterSam\UserAttributeMapper\Enums\AttributeType;
+use HarbourmasterSam\UserAttributeMapper\Models\AttributeMapping;
+use HarbourmasterSam\UserAttributeMapper\Services\ProfileMappingWorkspace;
+use HarbourmasterSam\UserAttributeMapper\Services\UserAttributeRegistry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -65,7 +65,7 @@ it('builds target-driven dynamic groups and excludes read-only attributes', func
 });
 
 it('toggles only the staged enabled state and retains its source claim', function (): void {
-    $page = new \Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+    $page = new \HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
     $page->groups = ['Pelican' => [[
         'mappings' => [[
             'source_value' => 'preferred_username',
@@ -91,7 +91,7 @@ it('toggles only the staged enabled state and retains its source claim', functio
 });
 
 it('does not toggle an unmapped row', function (): void {
-    $page = new \Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+    $page = new \HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
     $page->groups = ['Pelican' => [['mappings' => [[
         'source_value' => '', 'enabled' => true, 'priority' => 25,
         'description' => 'Unchanged', 'missing_claim_behavior' => 'clear',
@@ -106,7 +106,7 @@ it('does not toggle an unmapped row', function (): void {
 });
 
 it('clears only the staged source value when its source type changes', function (): void {
-    $page = new \Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+    $page = new \HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
     $page->groups = ['Pelican' => [['mappings' => [[
         'source_type' => 'claim', 'source_value' => 'preferred_username', 'enabled' => false,
         'priority' => 25, 'description' => 'Keep me', 'missing_claim_behavior' => 'clear',
@@ -192,9 +192,9 @@ it('selects only resolver options and defaults to the first enabled provider', f
         'provider' => 'removed', 'source_value' => 'old', 'target_attribute' => 'pelican.username',
         'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100,
     ]);
-    $providers = Mockery::mock(\Boy132\UserAttributeMapper\OAuth\OAuthProviderResolver::class);
+    $providers = Mockery::mock(\HarbourmasterSam\UserAttributeMapper\OAuth\OAuthProviderResolver::class);
     $providers->shouldReceive('options')->once()->andReturn(['staff' => 'Staff', 'port' => 'Port']);
-    $page = new \Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+    $page = new \HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
 
     $page->mount($providers, profileWorkspace());
 
@@ -205,9 +205,9 @@ it('selects only resolver options and defaults to the first enabled provider', f
 });
 
 it('keeps an empty workspace when no identity providers are enabled', function (): void {
-    $providers = Mockery::mock(\Boy132\UserAttributeMapper\OAuth\OAuthProviderResolver::class);
+    $providers = Mockery::mock(\HarbourmasterSam\UserAttributeMapper\OAuth\OAuthProviderResolver::class);
     $providers->shouldReceive('options')->once()->andReturn([]);
-    $page = new \Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+    $page = new \HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
 
     $page->mount($providers, profileWorkspace());
 
@@ -222,10 +222,10 @@ it('switches between independent provider workspaces', function (): void {
             'enabled' => true, 'missing_claim_behavior' => 'preserve', 'priority' => 100,
         ]);
     }
-    $providers = Mockery::mock(\Boy132\UserAttributeMapper\OAuth\OAuthProviderResolver::class);
+    $providers = Mockery::mock(\HarbourmasterSam\UserAttributeMapper\OAuth\OAuthProviderResolver::class);
     $providers->shouldReceive('options')->twice()->andReturn(['staff' => 'Staff', 'port' => 'Port']);
     $workspace = profileWorkspace();
-    $page = new \Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
+    $page = new \HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings();
     $page->mount($providers, $workspace);
 
     $staffUsername = collect($page->groups['Pelican'])->firstWhere('key', 'pelican.username');

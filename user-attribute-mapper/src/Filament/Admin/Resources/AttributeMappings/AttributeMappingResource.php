@@ -1,10 +1,10 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings;
+namespace HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings;
 
-use Boy132\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
-use Boy132\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings;
-use Boy132\UserAttributeMapper\Models\AttributeMapping;
+use HarbourmasterSam\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
+use HarbourmasterSam\UserAttributeMapper\Filament\Admin\Resources\AttributeMappings\Pages\ManageAttributeMappings;
+use HarbourmasterSam\UserAttributeMapper\Models\AttributeMapping;
 use Filament\Resources\Resource;
 use Illuminate\Support\Collection;
 

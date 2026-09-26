@@ -1,6 +1,6 @@
 <?php
 
-namespace Boy132\UserAttributeMapper;
+namespace HarbourmasterSam\UserAttributeMapper;
 
 use Filament\Contracts\Plugin;
 use Filament\Panel;
@@ -15,7 +15,7 @@ class UserAttributeMapperPlugin implements Plugin
     public function register(Panel $panel): void
     {
         if ($panel->getId() === 'admin') {
-            $panel->discoverResources(plugin_path($this->getId(), 'src/Filament/Admin/Resources'), 'Boy132\\UserAttributeMapper\\Filament\\Admin\\Resources');
+            $panel->discoverResources(plugin_path($this->getId(), 'src/Filament/Admin/Resources'), 'HarbourmasterSam\\UserAttributeMapper\\Filament\\Admin\\Resources');
         }
     }
 

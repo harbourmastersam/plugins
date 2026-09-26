@@ -1,10 +1,10 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Services;
+namespace HarbourmasterSam\UserAttributeMapper\Services;
 
-use Boy132\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
-use Boy132\UserAttributeMapper\Models\AttributeMapping;
-use Boy132\UserAttributeMapper\Enums\MappingSourceType;
+use HarbourmasterSam\UserAttributeMapper\Contracts\UserAttributeRegistryContract;
+use HarbourmasterSam\UserAttributeMapper\Models\AttributeMapping;
+use HarbourmasterSam\UserAttributeMapper\Enums\MappingSourceType;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 

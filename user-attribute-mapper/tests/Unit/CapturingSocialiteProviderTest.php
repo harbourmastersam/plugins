@@ -1,9 +1,9 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Tests\Unit;
+namespace HarbourmasterSam\UserAttributeMapper\Tests\Unit;
 
-use Boy132\UserAttributeMapper\OAuth\CapturingSocialiteProvider;
-use Boy132\UserAttributeMapper\OAuth\OAuthClaimContext;
+use HarbourmasterSam\UserAttributeMapper\OAuth\CapturingSocialiteProvider;
+use HarbourmasterSam\UserAttributeMapper\OAuth\OAuthClaimContext;
 use Laravel\Socialite\Contracts\Provider;
 use PHPUnit\Framework\TestCase;
 

@@ -1,6 +1,6 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\OAuth;
+namespace HarbourmasterSam\UserAttributeMapper\OAuth;
 
 class OAuthClaimContext
 {

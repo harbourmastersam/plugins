@@ -1,9 +1,9 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Models;
+namespace HarbourmasterSam\UserAttributeMapper\Models;
 
-use Boy132\UserAttributeMapper\Enums\MissingClaimBehavior;
-use Boy132\UserAttributeMapper\Enums\MappingSourceType;
+use HarbourmasterSam\UserAttributeMapper\Enums\MissingClaimBehavior;
+use HarbourmasterSam\UserAttributeMapper\Enums\MappingSourceType;
 use Illuminate\Database\Eloquent\Model;
 
 class AttributeMapping extends Model

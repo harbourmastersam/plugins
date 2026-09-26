@@ -1,8 +1,8 @@
 <?php
 
 use App\Models\User;
-use Boy132\UserAttributeMapper\Enums\AttributeType;
-use Boy132\UserAttributeMapper\Services\UserAttributeRegistry;
+use HarbourmasterSam\UserAttributeMapper\Enums\AttributeType;
+use HarbourmasterSam\UserAttributeMapper\Services\UserAttributeRegistry;
 use Boy132\UserCreatableServers\Models\UserResourceLimits;
 use HarbourmasterSam\UserAttributeMapperUcs\Attributes\UserCreatableServersAttributeProvider;
 use Illuminate\Database\Schema\Blueprint;

@@ -1,10 +1,10 @@
 <?php
 
 use App\Models\User;
-use Boy132\UserAttributeMapper\Attributes\PelicanUserAttributeProvider;
-use Boy132\UserAttributeMapper\Services\AttributeValueConverter;
-use Boy132\UserAttributeMapper\Services\UserAttributeRegistry;
-use Boy132\UserAttributeMapper\Services\UserAttributeService;
+use HarbourmasterSam\UserAttributeMapper\Attributes\PelicanUserAttributeProvider;
+use HarbourmasterSam\UserAttributeMapper\Services\AttributeValueConverter;
+use HarbourmasterSam\UserAttributeMapper\Services\UserAttributeRegistry;
+use HarbourmasterSam\UserAttributeMapper\Services\UserAttributeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

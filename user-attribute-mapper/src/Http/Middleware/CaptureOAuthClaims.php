@@ -1,10 +1,10 @@
 <?php
 
-namespace Boy132\UserAttributeMapper\Http\Middleware;
+namespace HarbourmasterSam\UserAttributeMapper\Http\Middleware;
 
-use Boy132\UserAttributeMapper\OAuth\CapturingSocialiteProvider;
-use Boy132\UserAttributeMapper\OAuth\OAuthClaimContext;
-use Boy132\UserAttributeMapper\OAuth\OAuthProviderResolver;
+use HarbourmasterSam\UserAttributeMapper\OAuth\CapturingSocialiteProvider;
+use HarbourmasterSam\UserAttributeMapper\OAuth\OAuthClaimContext;
+use HarbourmasterSam\UserAttributeMapper\OAuth\OAuthProviderResolver;
 use Closure;
 use Illuminate\Http\Request;
 use Laravel\Socialite\Contracts\Factory;
