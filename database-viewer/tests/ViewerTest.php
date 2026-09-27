@@ -86,6 +86,22 @@ class ViewerTest extends TestCase
         $this->actingAs($owner)->get($this->url($server, $database))->assertDontSee('NEVER-EXPOSE-THIS')->assertDontSee($database->username)->assertSee('sandbox="allow-scripts allow-same-origin"', false)->assertHeader('Cache-Control', 'no-store, private');
     }
 
+    public function test_probe_mode_query_separator_is_not_taken_from_php_ini(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $originalSeparator = ini_get('arg_separator.output');
+        ini_set('arg_separator.output', '&amp;');
+
+        try {
+            $this->actingAs($owner)->get($this->url($server, $database))
+                ->assertOk()
+                ->assertSee('&amp;mode=probe', false)
+                ->assertDontSee('&amp;amp;mode=probe', false);
+        } finally {
+            ini_set('arg_separator.output', $originalSeparator);
+        }
+    }
+
     public function test_unrelated_user_and_subuser_without_database_read_are_denied(): void
     {
         [, $server, $database] = $this->fixture();

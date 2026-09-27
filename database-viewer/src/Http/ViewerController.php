@@ -28,7 +28,12 @@ class ViewerController
         return response()->view('database-viewer::viewer', [
             'channel' => $channel,
             'origin' => $origin,
-            'iframeUrl' => $origin.'/embed/mysql?'.http_build_query(['channel' => $channel, 'mode' => 'probe']),
+            'iframeUrl' => $origin.'/embed/mysql?'.http_build_query(
+                ['channel' => $channel, 'mode' => 'probe'],
+                '',
+                '&',
+                PHP_QUERY_RFC3986,
+            ),
             'queryUrl' => route('database-viewer.query', ['server' => $server->uuid_short, 'database' => $database->id]),
             'backUrl' => DatabaseResource::getUrl('index', panel: 'server', tenant: $server),
             'databaseName' => $database->database,

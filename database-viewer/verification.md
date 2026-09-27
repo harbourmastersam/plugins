@@ -1,13 +1,13 @@
 # Verification and delivery inventory
 
-Recorded 2026-09-27. Development only; no production connection or deployment.
+Recorded 2026-09-27. The matching Studio Worker is deployed; no real production database query is claimed here.
 
 ## Results
 
-- PHP 8.4.26 / PHPUnit 12.5.33: **36 tests, 104 assertions, all passing**, no PHPUnit notices (0.1.1 probe URL verified).
+- PHP 8.4.26 / PHPUnit 12.5.33: **37 tests, 107 assertions, all passing**, no PHPUnit notices. The 0.1.2 regression test renders the iframe under `arg_separator.output=&amp;` and verifies that `mode=probe` is still emitted correctly.
 - Matching Studio change: **232 Jest tests passing across all 16 suites** (82 in the focused security/probe suites), including probe rendering, actual iframe transport validation, timeouts/retry and embed route selection. TypeScript typecheck and the production Next.js build passed.
 - Node 26.8.1 built-in test runner: **14 tests, all passing**.
-- Laravel Pint: clean (`--test --quiet`).
+- Laravel Pint: the PHP files changed in 0.1.2 are clean (`--test --quiet`).
 - Generated baseline scaffold with beta38's real `p:plugin:make` command in a disposable local Panel copy.
 - Installed final plugin sources using `php artisan p:plugin:install database-viewer` in that copy: **installed and enabled**.
 - `php artisan route:list --name=database-viewer --except-vendor`: all three expected GET/assets, GET/viewer and POST/query routes registered through the normal plugin loader.
@@ -67,8 +67,8 @@ Other added files in the plugins workspace:
 
 - `docs/superpowers/plans/2026-09-27-database-viewer.md`: implementation decisions and verification ledger.
 - `tools/package-database-viewer.py`: deterministic allowlist packager.
-- `dist/database-viewer-0.1.1.zip`: current runtime/documentation release archive.
-- `dist/database-viewer-0.1.1.zip.sha256`: current archive checksum.
-- The original 0.1.0 archive/checksum are retained as historical artifacts; install 0.1.1 with the updated Studio build.
+- `dist/database-viewer-0.1.2.zip`: current runtime/documentation release archive.
+- `dist/database-viewer-0.1.2.zip.sha256`: current archive checksum.
+- The 0.1.0 and 0.1.1 archives/checksums are retained as historical artifacts; install 0.1.2 with the updated Studio build.
 
 Existing file changed: root `README.md` adds the Database Viewer entry. No existing plugin files were changed. Plugin `.gitignore`, tests, phpunit.xml, plans, tools and test caches are excluded from the ZIP. The copied LICENSE is the existing plugins repository's GPLv3 license.

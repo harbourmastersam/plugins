@@ -1,8 +1,8 @@
-# Database Viewer 0.1.1
+# Database Viewer 0.1.2
 
 Plugin-only transport MVP for Pelican and GreyHarbour's hardened Outerbase Studio fork. **Only `SELECT 1` can execute.** No database credentials enter the viewer page, JavaScript, iframe URL, or Studio.
 
-**Requires the updated Studio probe build:** version 0.1.1 opens `/embed/mysql?channel=...&mode=probe`. The separately authorized Studio change displays a focused **Run SELECT 1** screen without constructing the schema-loading driver. It uses the existing hardened iframe transport, sends a single query only when clicked, and displays the returned result. Normal Studio mode still requires schema discovery and cannot work with this restricted broker. No schema results are fabricated and no additional SQL is allowed.
+**Requires the updated Studio probe build:** version 0.1.2 opens `/embed/mysql?channel=...&mode=probe`. The query separator is fixed explicitly so PHP's `arg_separator.output` setting cannot rename the parameter to `amp;mode`. The separately authorized Studio change displays a focused **Run SELECT 1** screen without constructing the schema-loading driver. It uses the existing hardened iframe transport, sends a single query only when clicked, and displays the returned result. Normal Studio mode still requires schema discovery and cannot work with this restricted broker. No schema results are fabricated and no additional SQL is allowed.
 
 ## Baseline and supported APIs
 
@@ -112,7 +112,7 @@ Build the allowlisted release archive from the plugins repository root:
 python3 tools/package-database-viewer.py
 ```
 
-Output: `dist/database-viewer-0.1.1.zip` plus SHA-256 checksum. Tests, caches, tools, development plans, environment files and dependencies are excluded.
+Output: `dist/database-viewer-0.1.2.zip` plus SHA-256 checksum. Tests, caches, tools, development plans, environment files and dependencies are excluded.
 
 ## Manual verification
 
