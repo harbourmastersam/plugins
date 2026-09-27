@@ -3,9 +3,15 @@
 namespace GreyHarbour\DatabaseViewer\Services;
 
 use App\Models\Database;
+use GreyHarbour\DatabaseViewer\Enums\AllowedQuery;
 
 interface QueryExecutor
 {
-    /** Execute the fixed SELECT 1, verify the result, and return elapsed milliseconds. */
-    public function execute(Database $database): float;
+    public function execute(Database $database, AllowedQuery $operation = AllowedQuery::Diagnostic): array;
+
+    /**
+     * @param  list<AllowedQuery>  $operations
+     * @return list<array<string, mixed>>
+     */
+    public function executeBatch(Database $database, array $operations): array;
 }

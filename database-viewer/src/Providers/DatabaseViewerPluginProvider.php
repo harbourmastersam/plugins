@@ -7,6 +7,7 @@ use App\Filament\Server\Resources\Databases\DatabaseResource;
 use App\Models\Database;
 use Filament\Actions\Action;
 use Filament\Tables\Table;
+use GreyHarbour\DatabaseViewer\Services\DatabaseResultSerializer;
 use GreyHarbour\DatabaseViewer\Services\MariaDbExecutor;
 use GreyHarbour\DatabaseViewer\Services\QueryExecutor;
 use Illuminate\Support\ServiceProvider;
@@ -16,6 +17,7 @@ class DatabaseViewerPluginProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../../config/database-viewer.php', 'database-viewer');
+        $this->app->singleton(DatabaseResultSerializer::class);
         $this->app->bind(QueryExecutor::class, MariaDbExecutor::class);
     }
 

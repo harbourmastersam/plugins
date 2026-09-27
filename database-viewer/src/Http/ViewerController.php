@@ -3,6 +3,7 @@
 namespace GreyHarbour\DatabaseViewer\Http;
 
 use App\Filament\Server\Resources\Databases\DatabaseResource;
+use GreyHarbour\DatabaseViewer\Enums\AllowedQuery;
 use GreyHarbour\DatabaseViewer\Services\QueryExecutor;
 use GreyHarbour\DatabaseViewer\Services\StudioOrigin;
 use GreyHarbour\DatabaseViewer\Services\ViewerAccess;
@@ -54,17 +55,14 @@ class ViewerController
         $metadata = ['user_id' => $request->user()->id, 'server_id' => $server->id, 'database_id' => $database->id, 'operation' => 'query'];
         $start = hrtime(true);
         try {
-            $duration = $executor->execute($database);
+            $result = $executor->execute($database, AllowedQuery::Diagnostic);
+            $duration = $result['stat']['queryDurationMs'] ?? null;
             if (!is_finite($duration) || $duration < 0) {
                 throw new \RuntimeException('Invalid query duration.');
             }
             Log::info('Database Viewer query succeeded', $metadata + ['duration_ms' => $duration]);
 
-            return response()->json(['data' => [
-                'headers' => [['name' => '1', 'displayName' => '1', 'originalType' => 'INT', 'type' => 2]],
-                'rows' => [(object) ['1' => 1]],
-                'stat' => ['rowsAffected' => 0, 'rowsRead' => 1, 'rowsWritten' => null, 'queryDurationMs' => $duration],
-            ]])->header('Cache-Control', 'no-store');
+            return response()->json(['data' => $result])->header('Cache-Control', 'no-store');
         } catch (Throwable) {
             // Do not report the exception: PDO exception messages can contain connection details.
             Log::warning('Database Viewer query failed', $metadata + ['duration_ms' => (hrtime(true) - $start) / 1_000_000]);

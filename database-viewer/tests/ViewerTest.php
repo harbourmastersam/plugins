@@ -14,7 +14,9 @@ use App\Models\Subuser;
 use App\Models\User;
 use Filament\Facades\Filament;
 use Filament\Tables\Table;
+use GreyHarbour\DatabaseViewer\Enums\AllowedQuery;
 use GreyHarbour\DatabaseViewer\Providers\DatabaseViewerPluginProvider;
+use GreyHarbour\DatabaseViewer\Services\DatabaseResultSerializer;
 use GreyHarbour\DatabaseViewer\Services\MariaDbExecutor;
 use GreyHarbour\DatabaseViewer\Services\QueryExecutor;
 use GreyHarbour\DatabaseViewer\Services\ViewerContext;
@@ -171,7 +173,8 @@ class ViewerTest extends TestCase
     {
         [$owner, $server, $database] = $this->fixture();
         $channel = $this->open($owner, $server, $database);
-        $this->mock(QueryExecutor::class)->shouldReceive('execute')->once()->withArgs(fn ($db) => $db->id === $database->id)->andReturn(2.5);
+        $result = ['headers' => [['name' => '1', 'displayName' => '1', 'originalType' => 'INT', 'type' => 2]], 'rows' => [['1' => 1]], 'stat' => ['rowsAffected' => 0, 'rowsRead' => 1, 'rowsWritten' => null, 'queryDurationMs' => 2.5]];
+        $this->mock(QueryExecutor::class)->shouldReceive('execute')->once()->withArgs(fn ($db, $operation) => $db->id === $database->id && $operation === AllowedQuery::Diagnostic)->andReturn($result);
         $this->postJson($this->url($server, $database, true), compact('channel') + ['statement' => " SELECT 1; \n"])->assertOk()->assertExactJson(['data' => ['headers' => [['name' => '1', 'displayName' => '1', 'originalType' => 'INT', 'type' => 2]], 'rows' => [['1' => 1]], 'stat' => ['rowsAffected' => 0, 'rowsRead' => 1, 'rowsWritten' => null, 'queryDurationMs' => 2.5]]]);
         $this->mock(QueryExecutor::class)->shouldReceive('execute')->andThrow(new \RuntimeException('NEVER-EXPOSE-THIS /internal/path'));
         config(['app.debug' => true]);
@@ -194,7 +197,7 @@ class ViewerTest extends TestCase
         $this->app->bind(PreventRequestForgery::class, EnforcedCsrf::class);
         $payload = ['channel' => $channel, 'statement' => 'SELECT 1'];
         $this->postJson($this->url($server, $database, true), $payload)->assertStatus(419);
-        $this->mock(QueryExecutor::class)->shouldReceive('execute')->once()->andReturn(1.0);
+        $this->mock(QueryExecutor::class)->shouldReceive('execute')->once()->andReturn(['headers' => [], 'rows' => [], 'stat' => ['rowsAffected' => 0, 'rowsRead' => 0, 'rowsWritten' => null, 'queryDurationMs' => 1.0]]);
         $this->withSession(['_token' => 'test-csrf'])->postJson($this->url($server, $database, true), $payload, ['X-CSRF-TOKEN' => 'test-csrf'])->assertOk();
     }
 
@@ -224,9 +227,12 @@ class ViewerTest extends TestCase
     {
         [, , $database] = $this->fixture();
         $statement = $this->createMock(\PDOStatement::class);
+        $statement->expects($this->once())->method('execute')->with([])->willReturn(true);
         $statement->expects($this->once())->method('fetchAll')->with(\PDO::FETCH_ASSOC)->willReturn([['1' => '1']]);
+        $statement->method('columnCount')->willReturn(1);
+        $statement->method('getColumnMeta')->willReturn(['name' => '1', 'native_type' => 'LONG']);
         $pdo = $this->createMock(\PDO::class);
-        $pdo->expects($this->once())->method('query')->with('SELECT 1')->willReturn($statement);
+        $pdo->expects($this->once())->method('prepare')->with('SELECT 1')->willReturn($statement);
         $connector = $this->createMock(MySqlConnector::class);
         $connector->expects($this->once())->method('connect')->with($this->callback(function ($config) use ($database) {
             return $config['host'] === $database->host->host && $config['port'] === $database->host->port
@@ -236,7 +242,9 @@ class ViewerTest extends TestCase
                 && $config['options'][\PDO::MYSQL_ATTR_MULTI_STATEMENTS] === false
                 && $config['options'][\PDO::MYSQL_ATTR_INIT_COMMAND] === 'SET SESSION max_statement_time=3';
         }))->willReturn($pdo);
-        $this->assertGreaterThanOrEqual(0, (new MariaDbExecutor($connector))->execute($database));
+        $result = (new MariaDbExecutor($connector, new DatabaseResultSerializer()))->execute($database, AllowedQuery::Diagnostic);
+        $this->assertSame([['1' => '1']], $result['rows']);
+        $this->assertGreaterThanOrEqual(0, $result['stat']['queryDurationMs']);
         $this->assertNotSame('NEVER-EXPOSE-THIS', $database->getRawOriginal('password'));
     }
 
@@ -244,13 +252,16 @@ class ViewerTest extends TestCase
     {
         [, , $database] = $this->fixture();
         $statement = $this->createStub(\PDOStatement::class);
-        $statement->method('fetchAll')->willReturn([['1' => 2]]);
+        $statement->method('execute')->willReturn(true);
+        $statement->method('fetchAll')->willReturn([['1' => []]]);
+        $statement->method('columnCount')->willReturn(1);
+        $statement->method('getColumnMeta')->willReturn(false);
         $pdo = $this->createStub(\PDO::class);
-        $pdo->method('query')->willReturn($statement);
+        $pdo->method('prepare')->willReturn($statement);
         $connector = $this->createStub(MySqlConnector::class);
         $connector->method('connect')->willReturn($pdo);
         $this->expectException(\RuntimeException::class);
-        (new MariaDbExecutor($connector))->execute($database);
+        (new MariaDbExecutor($connector, new DatabaseResultSerializer()))->execute($database, AllowedQuery::Diagnostic);
     }
 
     public function test_supported_table_hook_appends_action_and_preserves_core_actions(): void
