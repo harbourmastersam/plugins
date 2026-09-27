@@ -23,6 +23,7 @@ npm i -g yarn
 
 ## Plugins
 
+- [Database Viewer](/database-viewer) - Secure Studio transport MVP restricted to SELECT 1, using Studio's explicit probe mode
 - [Announcements](/announcements) - Create panel wide announcements to inform your users
 - [Billing](/billing) - Allows users to purchase servers via Stripe - **Proof of Concept - Do absolutely NOT use in production!**
 - [Generic OIDC Providers](/generic-oidc-providers) - Create generic OIDC providers for authentication

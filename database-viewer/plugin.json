@@ -1,0 +1,15 @@
+{
+    "id": "database-viewer",
+    "name": "Database Viewer",
+    "author": "GreyHarbour",
+    "version": "0.1.1",
+    "description": "Secure embedded Studio transport MVP, restricted to SELECT 1.",
+    "category": "plugin",
+    "url": "https://github.com/harbourmastersam/plugins",
+    "update_url": null,
+    "namespace": "GreyHarbour\\DatabaseViewer",
+    "class": "DatabaseViewerPlugin",
+    "panels": ["server"],
+    "panel_version": "1.0.0-beta38",
+    "composer_packages": null
+}
