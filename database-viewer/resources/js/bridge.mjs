@@ -52,14 +52,14 @@ function copyResult(data) {
 }
 
 function validRequest(message) {
-    if (!record(message) || !Number.isSafeInteger(message.id)) return false;
+    if (!record(message) || !Number.isSafeInteger(message.id) || !/^[a-f0-9]{32}$/.test(message.document)) return false;
     if (message.type === 'query') {
-        return exactKeys(message, ['type', 'id', 'channel', 'statement'])
+        return exactKeys(message, ['type', 'id', 'channel', 'document', 'statement'])
             && typeof message.statement === 'string'
             && byteLength(message.statement) <= 2048;
     }
     if (message.type === 'transaction') {
-        return exactKeys(message, ['type', 'id', 'channel', 'statements'])
+        return exactKeys(message, ['type', 'id', 'channel', 'document', 'statements'])
             && denseArray(message.statements, statement => typeof statement === 'string' && byteLength(statement) <= 2048)
             && message.statements.length === 6;
     }
@@ -76,17 +76,19 @@ export function createBridge({ iframe, origin, channel, broker }) {
         async handle(event) {
             if (!active || event.origin !== origin || event.source !== iframe.contentWindow) return;
             const message = event.data;
-            if (!validRequest(message) || message.channel !== channel || pending.has(message.id)) return;
+            if (!validRequest(message) || message.channel !== channel) return;
+            const pendingKey = `${message.document}:${message.id}`;
+            if (pending.has(pendingKey)) return;
 
             const target = iframe.contentWindow;
             const current = generation;
-            const identity = { type: message.type, id: message.id, channel };
+            const identity = { type: message.type, id: message.id, channel, document: message.document };
             const reply = payload => {
                 if (active && generation === current && iframe.contentWindow === target) {
                     target.postMessage({ ...identity, ...payload }, origin);
                 }
             };
-            pending.add(message.id);
+            pending.add(pendingKey);
             try {
                 const payload = message.type === 'query'
                     ? { type: 'query', statement: message.statement, channel }
@@ -107,7 +109,7 @@ export function createBridge({ iframe, origin, channel, broker }) {
             } catch {
                 reply({ error: 'Database query failed.' });
             } finally {
-                if (generation === current) pending.delete(message.id);
+                if (generation === current) pending.delete(pendingKey);
             }
         },
     };

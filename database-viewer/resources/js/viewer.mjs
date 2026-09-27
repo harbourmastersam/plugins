@@ -24,10 +24,7 @@ const bridge = createBridge({
 });
 const listener = event => { void bridge.handle(event); };
 window.addEventListener('message', listener);
-let loaded = false;
 iframe.addEventListener('load', () => {
-    if (loaded) { bridge.reset(); for (const request of requests) request.abort(); }
-    loaded = true;
     status.textContent = 'Schema metadata access only. Table rows and writes are unavailable.';
 });
 window.addEventListener('pagehide', () => {

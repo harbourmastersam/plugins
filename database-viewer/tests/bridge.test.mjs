@@ -27,7 +27,7 @@ function setup(broker = async () => result()) {
     const event = {
         origin,
         source: frame.contentWindow,
-        data: { type: 'query', id: 1, channel, statement: 'SELECT DATABASE() AS db' },
+        data: { type: 'query', id: 1, channel, document: 'a'.repeat(32), statement: 'SELECT DATABASE() AS db' },
     };
     return { bridge, event, frame, sent, calls };
 }
@@ -46,7 +46,7 @@ test('valid query forwards explicit type and returns a copied result', async () 
 
     assert.deepEqual(s.calls, [{ type: 'query', statement: 'SELECT DATABASE() AS db', channel }]);
     assert.deepEqual(s.sent, [[{
-        type: 'query', id: 1, channel,
+        type: 'query', id: 1, channel, document: 'a'.repeat(32),
         data: result('s2_test'),
     }, origin]]);
     assert.ok(!JSON.stringify(s.sent).includes('secret'));
@@ -56,17 +56,17 @@ test('valid six-result transaction preserves request and result order', async ()
     const statements = Array.from({ length: 6 }, (_, index) => `SELECT schema_${index}`);
     const results = Array.from({ length: 6 }, (_, index) => result(index));
     const s = setup(async () => results);
-    s.event.data = { type: 'transaction', id: 2, channel, statements };
+    s.event.data = { type: 'transaction', id: 2, channel, document: 'a'.repeat(32), statements };
 
     await s.bridge.handle(s.event);
 
     assert.deepEqual(s.calls, [{ type: 'transaction', statements, channel }]);
-    assert.deepEqual(s.sent, [[{ type: 'transaction', id: 2, channel, data: results }, origin]]);
+    assert.deepEqual(s.sent, [[{ type: 'transaction', id: 2, channel, document: 'a'.repeat(32), data: results }, origin]]);
 });
 
 test('transaction response length mismatch fails generically', async () => {
     const s = setup(async () => Array.from({ length: 5 }, (_, index) => result(index)));
-    s.event.data = { type: 'transaction', id: 2, channel, statements: Array(6).fill('SELECT schema') };
+    s.event.data = { type: 'transaction', id: 2, channel, document: 'a'.repeat(32), statements: Array(6).fill('SELECT schema') };
 
     await s.bridge.handle(s.event);
 
@@ -102,7 +102,7 @@ test('rejects malformed transaction shape and byte bounds before fetching', asyn
     ];
     for (const [, statements] of cases) {
         const s = setup();
-        s.event.data = { type: 'transaction', id: 2, channel, statements };
+        s.event.data = { type: 'transaction', id: 2, channel, document: 'a'.repeat(32), statements };
         await s.bridge.handle(s.event);
         assert.equal(s.calls.length, 0);
         assert.equal(s.sent.length, 0);
@@ -144,7 +144,7 @@ test('reset, disposal, and iframe replacement drop pending transaction replies',
     for (const action of ['reset', 'dispose', 'replace']) {
         let resolve;
         const s = setup(() => new Promise(done => { resolve = done; }));
-        s.event.data = { type: 'transaction', id: 2, channel, statements: Array(6).fill('SELECT schema') };
+        s.event.data = { type: 'transaction', id: 2, channel, document: 'a'.repeat(32), statements: Array(6).fill('SELECT schema') };
         const pending = s.bridge.handle(s.event);
         if (action === 'replace') s.frame.contentWindow = {};
         else s.bridge[action]();
@@ -162,4 +162,31 @@ test('duplicate inflight IDs do not run another request', async () => {
     assert.equal(s.calls.length, 1);
     resolve(result());
     await pending;
+});
+
+test('stable iframe window keeps reloaded documents and colliding IDs isolated', async () => {
+    const resolvers = [];
+    const s = setup(() => new Promise(resolve => resolvers.push(resolve)));
+    const first = {
+        ...s.event,
+        data: { ...s.event.data, document: 'a'.repeat(32) },
+    };
+    const second = {
+        ...s.event,
+        data: { ...s.event.data, document: 'b'.repeat(32) },
+    };
+
+    const oldPending = s.bridge.handle(first);
+    const newPending = s.bridge.handle(second);
+    assert.equal(s.calls.length, 2);
+
+    resolvers[1](result('new'));
+    await newPending;
+    resolvers[0](result('old'));
+    await oldPending;
+
+    assert.equal(s.sent[0][0].document, 'b'.repeat(32));
+    assert.equal(s.sent[0][0].data.rows[0].value, 'new');
+    assert.equal(s.sent[1][0].document, 'a'.repeat(32));
+    assert.equal(s.sent[1][0].data.rows[0].value, 'old');
 });

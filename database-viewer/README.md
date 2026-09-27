@@ -6,14 +6,14 @@ Database Viewer embeds GreyHarbour's hardened Outerbase Studio fork in Pelican P
 
 The broker accepts exactly one six-statement transaction, in this order:
 
-1. list non-system schemas;
+1. return the single authorized schema;
 2. list tables and views;
 3. list columns;
 4. list primary, unique, and foreign-key constraints;
 5. list foreign-key column usage;
 6. list triggers.
 
-It also accepts the diagnostic query `SELECT 1`. All SQL is matched structurally and then replaced with server-owned SQL before execution. Incoming SQL is never passed to PDO. Row queries, writes, DDL, arbitrary transactions, exports, and dumps are rejected.
+It also accepts the diagnostic queries `SELECT 1` and `SELECT DATABASE() AS db`. Requests must match the fixed allowlisted forms after the documented case and whitespace normalization, then the broker replaces them with server-owned SQL before execution. Incoming SQL is never passed to PDO. Row queries, writes, DDL, arbitrary transactions, exports, and dumps are rejected.
 
 The requested database is part of the iframe route. Studio must receive exactly one valid database name on `/embed/mysql?channel=…&database=…`; it uses that name to constrain every metadata statement. Names are accepted only when they contain 1–64 Unicode code points and no control characters, DEL, or replacement characters.
 
@@ -45,7 +45,7 @@ It must be one exact lowercase HTTPS origin. Run `php artisan optimize:clear` af
 
 Both viewer and broker routes resolve the server by `uuid_short`, require normal tenant access and `database.read`, and retrieve the database through that server's relationship. Session authentication, two-factor middleware, CSRF protection, request throttling, suspended-server denial, and per-request authorization remain active. The database password is decrypted only when opening the request-local PDO connection.
 
-The browser bridge validates the exact Studio origin, iframe window, random channel, request ID, operation, and payload. A schema request is limited to six statements, each at most 2,048 UTF-8 bytes. The raw JSON request is limited to 16 KiB. A serialized response larger than 5 MiB is rejected. Connections are non-persistent, PDO multi-statements are disabled, and MariaDB receives a three-second statement limit.
+The browser bridge validates the exact Studio origin, iframe window, random channel, per-document nonce, request ID, operation, and payload. The per-document nonce prevents an old request from resolving a new Studio document after an iframe reload, even though browsers preserve the iframe's `WindowProxy`. A schema request is limited to six statements, each at most 2,048 UTF-8 bytes. The raw JSON request is limited to 16 KiB. A serialized response larger than 5 MiB is rejected. Connections are non-persistent, PDO multi-statements are disabled, and MariaDB receives a three-second statement limit.
 
 Viewer contexts are bound to user, server, and database IDs in the Laravel session. Up to 20 contexts are retained per session. Permission revocation, database deletion, server suspension, logout, iframe reload, and bridge disposal all fail closed.
 
