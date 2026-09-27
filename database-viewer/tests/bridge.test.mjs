@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createBridge } from '../resources/js/bridge.mjs';
+import * as bridgeModule from '../resources/js/bridge.mjs';
+
+const { createBridge } = bridgeModule;
 
 const result = { headers: [{ name: '1', displayName: '1', originalType: 'INT', type: 2 }], rows: [{ '1': 1 }], stat: { rowsAffected: 0, rowsRead: 1, rowsWritten: null, queryDurationMs: 1 } };
 function setup(broker = async () => result) {
@@ -11,6 +13,13 @@ function setup(broker = async () => result) {
     const event = { origin: 'https://studio.greyharbour.net', source: frame.contentWindow, data: { type: 'query', id: 1, channel: 'a'.repeat(32), statement: 'SELECT 1' } };
     return { bridge, event, frame, sent, calls: () => calls };
 }
+test('viewer adds the probe mode when a hot-loaded controller omits it', () => {
+    assert.equal(typeof bridgeModule.withProbeMode, 'function');
+    assert.equal(
+        bridgeModule.withProbeMode('https://studio.greyharbour.net/embed/mysql?channel=abc'),
+        'https://studio.greyharbour.net/embed/mysql?channel=abc&mode=probe',
+    );
+});
 test('valid query returns exact identity and exact target origin', async () => {
     const s = setup(); await s.bridge.handle(s.event);
     assert.equal(s.calls(), 1);

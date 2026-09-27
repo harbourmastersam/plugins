@@ -2,7 +2,7 @@
     "id": "database-viewer",
     "name": "Database Viewer",
     "author": "GreyHarbour",
-    "version": "0.1.2",
+    "version": "0.1.3",
     "description": "Secure embedded Studio transport MVP, restricted to SELECT 1.",
     "category": "plugin",
     "url": "https://github.com/harbourmastersam/plugins",

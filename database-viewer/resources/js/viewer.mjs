@@ -1,4 +1,4 @@
-import { createBridge } from './bridge.mjs';
+import { createBridge, withProbeMode } from './bridge.mjs';
 
 const iframe = document.getElementById('database-viewer');
 const status = document.getElementById('viewer-status');
@@ -35,4 +35,4 @@ window.addEventListener('pagehide', () => {
     for (const request of requests) request.abort();
 }, { once: true });
 window.addEventListener('pageshow', event => { if (event.persisted) window.location.reload(); });
-iframe.src = iframe.dataset.src;
+iframe.src = withProbeMode(iframe.dataset.src);

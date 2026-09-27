@@ -1,6 +1,12 @@
 const allowedQuery = /^[ \t\r\n]*SELECT[ \t\r\n]+1[ \t\r\n]*;?[ \t\r\n]*$/i;
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
+export function withProbeMode(value) {
+    const url = new URL(value);
+    url.searchParams.set('mode', 'probe');
+    return url.toString();
+}
+
 function validResult(data) {
     return record(data) && Array.isArray(data.headers) && data.headers.length === 1
         && record(data.headers[0]) && data.headers[0].name === '1' && data.headers[0].displayName === '1'
