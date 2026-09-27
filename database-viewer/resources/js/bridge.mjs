@@ -1,19 +1,69 @@
-const allowedQuery = /^[ \t\r\n]*SELECT[ \t\r\n]+1[ \t\r\n]*;?[ \t\r\n]*$/i;
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const finite = value => typeof value === 'number' && Number.isFinite(value);
+const scalar = value => value === null || typeof value === 'string' || typeof value === 'boolean' || finite(value);
+const byteLength = value => new TextEncoder().encode(value).byteLength;
 
-export function withProbeMode(value) {
-    const url = new URL(value);
-    url.searchParams.set('mode', 'probe');
-    return url.toString();
+function denseArray(value, validate) {
+    if (!Array.isArray(value) || Object.keys(value).length !== value.length) return false;
+    for (let index = 0; index < value.length; index++) {
+        if (!Object.hasOwn(value, index) || !validate(value[index])) return false;
+    }
+    return true;
 }
 
-function validResult(data) {
-    return record(data) && Array.isArray(data.headers) && data.headers.length === 1
-        && record(data.headers[0]) && data.headers[0].name === '1' && data.headers[0].displayName === '1'
-        && data.headers[0].originalType === 'INT' && data.headers[0].type === 2
-        && Array.isArray(data.rows) && data.rows.length === 1 && record(data.rows[0]) && data.rows[0]['1'] === 1
-        && record(data.stat) && data.stat.rowsAffected === 0 && data.stat.rowsRead === 1
-        && data.stat.rowsWritten === null && Number.isFinite(data.stat.queryDurationMs) && data.stat.queryDurationMs >= 0;
+function exactKeys(value, expected) {
+    const keys = Object.keys(value).sort();
+    return keys.length === expected.length && keys.every((key, index) => key === [...expected].sort()[index]);
+}
+
+function copyResult(data) {
+    if (!record(data) || !record(data.stat)) return null;
+    if (!denseArray(data.headers, header => record(header)
+        && typeof header.name === 'string'
+        && typeof header.displayName === 'string'
+        && (header.originalType === null || typeof header.originalType === 'string')
+        && (header.type === undefined || [1, 2, 3, 4].includes(header.type)))) return null;
+    if (!denseArray(data.rows, row => record(row) && Object.values(row).every(scalar))) return null;
+    if (!finite(data.stat.rowsAffected)
+        || ![data.stat.rowsRead, data.stat.rowsWritten].every(value => value === null || finite(value))
+        || !(data.stat.queryDurationMs === null || (finite(data.stat.queryDurationMs) && data.stat.queryDurationMs >= 0))
+        || !(data.lastInsertRowid === undefined || finite(data.lastInsertRowid))) return null;
+
+    const result = {
+        headers: data.headers.map(header => {
+            const copy = {
+                name: header.name,
+                displayName: header.displayName,
+                originalType: header.originalType,
+            };
+            if (header.type !== undefined) copy.type = header.type;
+            return copy;
+        }),
+        rows: data.rows.map(row => Object.fromEntries(Object.entries(row))),
+        stat: {
+            rowsAffected: data.stat.rowsAffected,
+            rowsRead: data.stat.rowsRead,
+            rowsWritten: data.stat.rowsWritten,
+            queryDurationMs: data.stat.queryDurationMs,
+        },
+    };
+    if (data.lastInsertRowid !== undefined) result.lastInsertRowid = data.lastInsertRowid;
+    return result;
+}
+
+function validRequest(message) {
+    if (!record(message) || !Number.isSafeInteger(message.id)) return false;
+    if (message.type === 'query') {
+        return exactKeys(message, ['type', 'id', 'channel', 'statement'])
+            && typeof message.statement === 'string'
+            && byteLength(message.statement) <= 2048;
+    }
+    if (message.type === 'transaction') {
+        return exactKeys(message, ['type', 'id', 'channel', 'statements'])
+            && denseArray(message.statements, statement => typeof statement === 'string' && byteLength(statement) <= 2048)
+            && message.statements.length === 6;
+    }
+    return false;
 }
 
 export function createBridge({ iframe, origin, channel, broker }) {
@@ -26,26 +76,34 @@ export function createBridge({ iframe, origin, channel, broker }) {
         async handle(event) {
             if (!active || event.origin !== origin || event.source !== iframe.contentWindow) return;
             const message = event.data;
-            if (!record(message) || message.channel !== channel || !Number.isSafeInteger(message.id)) return;
-            if (message.type !== 'query' && message.type !== 'transaction') return;
-            if (message.type === 'query' && typeof message.statement !== 'string') return;
-            if (message.type === 'transaction' && (!Array.isArray(message.statements)
-                || !message.statements.every(statement => typeof statement === 'string'))) return;
-            if (pending.has(message.id)) return;
+            if (!validRequest(message) || message.channel !== channel || pending.has(message.id)) return;
+
             const target = iframe.contentWindow;
             const current = generation;
             const identity = { type: message.type, id: message.id, channel };
             const reply = payload => {
-                if (active && generation === current && iframe.contentWindow === target) target.postMessage({ ...identity, ...payload }, origin);
+                if (active && generation === current && iframe.contentWindow === target) {
+                    target.postMessage({ ...identity, ...payload }, origin);
+                }
             };
-            if (message.type === 'transaction') { reply({ error: 'Transactions are not supported in MVP mode.' }); return; }
-            if (message.statement.length > 128 || !allowedQuery.test(message.statement)) { reply({ error: 'Query not permitted in MVP mode.' }); return; }
             pending.add(message.id);
             try {
-                const data = await broker({ statement: message.statement, channel });
-                if (!validResult(data)) throw new Error('Invalid result');
-                // Copy only the contract fields; never forward arbitrary backend properties.
-                reply({ data: { headers: [{ name: '1', displayName: '1', originalType: 'INT', type: 2 }], rows: [{ '1': 1 }], stat: { rowsAffected: 0, rowsRead: 1, rowsWritten: null, queryDurationMs: data.stat.queryDurationMs } } });
+                const payload = message.type === 'query'
+                    ? { type: 'query', statement: message.statement, channel }
+                    : { type: 'transaction', statements: [...message.statements], channel };
+                const backendData = await broker(payload);
+                if (message.type === 'query') {
+                    const data = copyResult(backendData);
+                    if (data === null) throw new Error('Invalid result');
+                    reply({ data });
+                } else {
+                    if (!denseArray(backendData, record) || backendData.length !== message.statements.length) {
+                        throw new Error('Invalid transaction result');
+                    }
+                    const data = backendData.map(copyResult);
+                    if (data.some(item => item === null)) throw new Error('Invalid transaction result');
+                    reply({ data });
+                }
             } catch {
                 reply({ error: 'Database query failed.' });
             } finally {

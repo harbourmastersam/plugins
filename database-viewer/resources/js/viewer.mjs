@@ -1,4 +1,4 @@
-import { createBridge, withProbeMode } from './bridge.mjs';
+import { createBridge } from './bridge.mjs';
 
 const iframe = document.getElementById('database-viewer');
 const status = document.getElementById('viewer-status');
@@ -28,11 +28,11 @@ let loaded = false;
 iframe.addEventListener('load', () => {
     if (loaded) { bridge.reset(); for (const request of requests) request.abort(); }
     loaded = true;
-    status.textContent = 'Only SELECT 1 is permitted. Other operations return an MVP error.';
+    status.textContent = 'Schema metadata access only. Table rows and writes are unavailable.';
 });
 window.addEventListener('pagehide', () => {
     bridge.dispose(); window.removeEventListener('message', listener);
     for (const request of requests) request.abort();
 }, { once: true });
 window.addEventListener('pageshow', event => { if (event.persisted) window.location.reload(); });
-iframe.src = withProbeMode(iframe.dataset.src);
+iframe.src = iframe.dataset.src;
