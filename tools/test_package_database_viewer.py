@@ -1,6 +1,7 @@
 import hashlib
 import importlib.util
 from pathlib import Path
+import tempfile
 import unittest
 import zipfile
 
@@ -18,6 +19,13 @@ def load_packager():
 
 
 class DatabaseViewerPackageTest(unittest.TestCase):
+    def test_runtime_text_uses_canonical_line_endings(self):
+        packager = load_packager()
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "runtime.txt"
+            source.write_bytes(b"first\r\nsecond\r\n")
+            self.assertEqual(b"first\nsecond\n", packager.archive_bytes(source))
+
     def test_package_is_deterministic_and_contains_only_runtime_files(self):
         packager = load_packager()
 

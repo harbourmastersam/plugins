@@ -33,6 +33,11 @@ RUNTIME_FILES = (
 )
 
 
+def archive_bytes(source: Path) -> bytes:
+    """Return canonical bytes independent of the checkout's line-ending mode."""
+    return source.read_bytes().replace(b"\r\n", b"\n")
+
+
 def package_plugin(repo: Path) -> tuple[Path, str]:
     repo = repo.resolve()
     metadata = json.loads((repo / "database-viewer" / "plugin.json").read_text(encoding="utf-8"))
@@ -50,7 +55,7 @@ def package_plugin(repo: Path) -> tuple[Path, str]:
             info = zipfile.ZipInfo(relative_path, date_time=ARCHIVE_TIMESTAMP)
             info.create_system = 3
             info.external_attr = 0o100644 << 16
-            archive.writestr(info, source.read_bytes(), compress_type=zipfile.ZIP_DEFLATED)
+            archive.writestr(info, archive_bytes(source), compress_type=zipfile.ZIP_DEFLATED)
 
     with zipfile.ZipFile(target) as archive:
         if archive.testzip() is not None:
