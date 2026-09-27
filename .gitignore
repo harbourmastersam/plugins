@@ -4,3 +4,4 @@
 /.nova
 /.vscode
 /.ddev
+__pycache__/
