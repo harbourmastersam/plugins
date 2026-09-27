@@ -13,7 +13,7 @@ The broker accepts exactly one six-statement transaction, in this order:
 5. list foreign-key column usage;
 6. list triggers.
 
-It also accepts the diagnostic queries `SELECT 1` and `SELECT DATABASE() AS db`. Requests must match the fixed allowlisted forms after the documented case and whitespace normalization, then the broker replaces them with server-owned SQL before execution. Incoming SQL is never passed to PDO. Row queries, writes, DDL, arbitrary transactions, exports, and dumps are rejected.
+It also accepts the diagnostic query `SELECT 1` and the current-database query `SELECT DATABASE() AS db`. `SELECT 1` permits case changes, surrounding whitespace, and one trailing semicolon. The current-database query and all six metadata statements must match their canonical strings exactly. The broker then replaces every accepted request with server-owned SQL before execution. Incoming SQL is never passed to PDO. Row queries, writes, DDL, arbitrary transactions, exports, and dumps are rejected.
 
 The requested database is part of the iframe route. Studio must receive exactly one valid database name on `/embed/mysql?channel=…&database=…`; it uses that name to constrain every metadata statement. Names are accepted only when they contain 1–64 Unicode code points and no control characters, DEL, or replacement characters.
 
