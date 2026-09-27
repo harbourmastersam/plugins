@@ -7,7 +7,7 @@ use GreyHarbour\DatabaseViewer\Enums\AllowedQuery;
 
 interface QueryExecutor
 {
-    public function execute(Database $database, AllowedQuery $operation = AllowedQuery::Diagnostic): array;
+    public function execute(Database $database, AllowedQuery $operation): array;
 
     /**
      * @param  list<AllowedQuery>  $operations

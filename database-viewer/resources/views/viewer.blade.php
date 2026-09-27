@@ -19,8 +19,8 @@
     <header>
         <a href="{{ $backUrl }}">Back to databases</a>
         <h1>Database Viewer — {{ $databaseName }}</h1>
-        <p>MVP transport supports only <code>SELECT 1</code>. Schema discovery and transactions are unavailable.</p>
-        <p>Use “Run SELECT 1” in Studio below to test the selected database connection.</p>
+        <p>Studio can read schema metadata for this database. Table rows, writes, exports, and arbitrary SQL remain unavailable.</p>
+        <p>The explicit <code>mode=probe</code> URL remains available for a diagnostic <code>SELECT 1</code> connection test.</p>
         <p id="viewer-status" role="status">Loading Studio…</p>
     </header>
     <iframe id="database-viewer" title="Database Viewer Studio" sandbox="allow-scripts allow-same-origin"

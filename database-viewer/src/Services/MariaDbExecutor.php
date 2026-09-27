@@ -24,7 +24,7 @@ class MariaDbExecutor implements QueryExecutor
         private DatabaseResultSerializer $serializer,
     ) {}
 
-    public function execute(Database $database, AllowedQuery $operation = AllowedQuery::Diagnostic): array
+    public function execute(Database $database, AllowedQuery $operation): array
     {
         if (!in_array($operation, [AllowedQuery::Diagnostic, AllowedQuery::CurrentDatabase], true)) {
             throw new RuntimeException('Operation is not permitted as a standalone query.');

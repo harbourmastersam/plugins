@@ -16,6 +16,7 @@ use Filament\Facades\Filament;
 use Filament\Tables\Table;
 use GreyHarbour\DatabaseViewer\Enums\AllowedQuery;
 use GreyHarbour\DatabaseViewer\Providers\DatabaseViewerPluginProvider;
+use GreyHarbour\DatabaseViewer\Services\BrokerLimits;
 use GreyHarbour\DatabaseViewer\Services\DatabaseResultSerializer;
 use GreyHarbour\DatabaseViewer\Services\MariaDbExecutor;
 use GreyHarbour\DatabaseViewer\Services\QueryExecutor;
@@ -76,6 +77,30 @@ class ViewerTest extends TestCase
         return $this->actingAs($user)->get($this->url($server, $database))->assertOk()->viewData('channel');
     }
 
+    private function queryPayload(string $channel, string $statement = 'SELECT 1'): array
+    {
+        return ['type' => 'query', 'channel' => $channel, 'statement' => $statement];
+    }
+
+    private function emptyResult(float $duration = 0): array
+    {
+        return ['headers' => [], 'rows' => [], 'stat' => ['rowsAffected' => 0, 'rowsRead' => 0, 'rowsWritten' => null, 'queryDurationMs' => $duration]];
+    }
+
+    private function schemaStatements(string $database): array
+    {
+        $literal = "'".str_replace("'", "''", $database)."'";
+
+        return [
+            "SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = $literal",
+            "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE, DATA_LENGTH, INDEX_LENGTH FROM information_schema.tables WHERE TABLE_SCHEMA = $literal",
+            "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, DATA_TYPE, EXTRA, COLUMN_KEY, IS_NULLABLE, COLUMN_DEFAULT FROM information_schema.columns WHERE TABLE_SCHEMA = $literal",
+            "SELECT TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME, CONSTRAINT_TYPE FROM information_schema.table_constraints WHERE TABLE_SCHEMA = $literal AND CONSTRAINT_TYPE IN ('PRIMARY KEY', 'UNIQUE', 'FOREIGN KEY')",
+            "SELECT CONSTRAINT_NAME, TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_SCHEMA, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.key_column_usage WHERE TABLE_SCHEMA = $literal",
+            "SELECT * from information_schema.triggers WHERE TRIGGER_SCHEMA = $literal",
+        ];
+    }
+
     public function test_owner_can_open_fresh_credential_free_viewers(): void
     {
         [$owner, $server, $database] = $this->fixture();
@@ -83,12 +108,20 @@ class ViewerTest extends TestCase
         $b = $this->open($owner, $server, $database);
         $this->assertNotSame($a, $b);
         $this->actingAs($owner)->get($this->url($server, $database))
-            ->assertViewHas('iframeUrl', fn ($url) => str_contains($url, '&mode=probe'));
+            ->assertViewHas('iframeUrl', function (string $url) use ($database): bool {
+                $query = parse_url($url, PHP_URL_QUERY);
+                parse_str($query, $parameters);
+
+                return ($parameters['database'] ?? null) === $database->database
+                    && isset($parameters['channel'])
+                    && !isset($parameters['mode'])
+                    && substr_count($query, 'database=') === 1;
+            });
         $this->assertMatchesRegularExpression('/^[A-Za-z0-9_-]{43}$/D', $a);
         $this->actingAs($owner)->get($this->url($server, $database))->assertDontSee('NEVER-EXPOSE-THIS')->assertDontSee($database->username)->assertSee('sandbox="allow-scripts allow-same-origin"', false)->assertHeader('Cache-Control', 'no-store, private');
     }
 
-    public function test_probe_mode_query_separator_is_not_taken_from_php_ini(): void
+    public function test_database_query_separator_is_explicit_and_rfc3986_encoded(): void
     {
         [$owner, $server, $database] = $this->fixture();
         $originalSeparator = ini_get('arg_separator.output');
@@ -97,8 +130,8 @@ class ViewerTest extends TestCase
         try {
             $this->actingAs($owner)->get($this->url($server, $database))
                 ->assertOk()
-                ->assertSee('&amp;mode=probe', false)
-                ->assertDontSee('&amp;amp;mode=probe', false);
+                ->assertSee('&amp;database=', false)
+                ->assertDontSee('&amp;amp;database=', false);
         } finally {
             ini_set('arg_separator.output', $originalSeparator);
         }
@@ -166,7 +199,7 @@ class ViewerTest extends TestCase
         [$owner, $server, $database] = $this->fixture();
         $channel = $this->open($owner, $server, $database);
         $this->mock(QueryExecutor::class)->shouldNotReceive('execute');
-        $this->postJson($this->url($server, $database, true), compact('channel', 'statement'))->assertStatus(422)->assertExactJson(['error' => 'Query not permitted in MVP mode.']);
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($channel, $statement))->assertStatus(422)->assertExactJson(['error' => 'Query not permitted.']);
     }
 
     public function test_select_one_returns_studio_shape_and_safe_errors(): void
@@ -175,10 +208,98 @@ class ViewerTest extends TestCase
         $channel = $this->open($owner, $server, $database);
         $result = ['headers' => [['name' => '1', 'displayName' => '1', 'originalType' => 'INT', 'type' => 2]], 'rows' => [['1' => 1]], 'stat' => ['rowsAffected' => 0, 'rowsRead' => 1, 'rowsWritten' => null, 'queryDurationMs' => 2.5]];
         $this->mock(QueryExecutor::class)->shouldReceive('execute')->once()->withArgs(fn ($db, $operation) => $db->id === $database->id && $operation === AllowedQuery::Diagnostic)->andReturn($result);
-        $this->postJson($this->url($server, $database, true), compact('channel') + ['statement' => " SELECT 1; \n"])->assertOk()->assertExactJson(['data' => ['headers' => [['name' => '1', 'displayName' => '1', 'originalType' => 'INT', 'type' => 2]], 'rows' => [['1' => 1]], 'stat' => ['rowsAffected' => 0, 'rowsRead' => 1, 'rowsWritten' => null, 'queryDurationMs' => 2.5]]]);
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($channel, " SELECT 1; \n"))->assertOk()->assertExactJson(['data' => ['headers' => [['name' => '1', 'displayName' => '1', 'originalType' => 'INT', 'type' => 2]], 'rows' => [['1' => 1]], 'stat' => ['rowsAffected' => 0, 'rowsRead' => 1, 'rowsWritten' => null, 'queryDurationMs' => 2.5]]]);
         $this->mock(QueryExecutor::class)->shouldReceive('execute')->andThrow(new \RuntimeException('NEVER-EXPOSE-THIS /internal/path'));
         config(['app.debug' => true]);
-        $this->postJson($this->url($server, $database, true), compact('channel') + ['statement' => 'SELECT 1'])->assertStatus(503)->assertExactJson(['error' => 'Database query failed.']);
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($channel))->assertStatus(503)->assertExactJson(['error' => 'Database query failed.']);
+    }
+
+    public function test_current_database_and_exact_schema_transaction_are_executed(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        $queryResult = $this->emptyResult(0.5);
+        $transactionResults = array_map(fn (int $index) => $this->emptyResult($index), range(1, 6));
+        $executor = $this->mock(QueryExecutor::class);
+        $executor->shouldReceive('execute')->once()->withArgs(fn ($model, $operation) => $model->id === $database->id && $operation === AllowedQuery::CurrentDatabase)->andReturn($queryResult);
+        $executor->shouldReceive('executeBatch')->once()->withArgs(fn ($model, $operations) => $model->id === $database->id && $operations === [AllowedQuery::Schema, AllowedQuery::Tables, AllowedQuery::Columns, AllowedQuery::Constraints, AllowedQuery::ConstraintColumns, AllowedQuery::Triggers])->andReturn($transactionResults);
+
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($channel, 'SELECT DATABASE() AS db'))
+            ->assertOk()->assertExactJson(['data' => $queryResult]);
+        $this->postJson($this->url($server, $database, true), [
+            'type' => 'transaction',
+            'channel' => $channel,
+            'statements' => $this->schemaStatements($database->database),
+        ])->assertOk()->assertExactJson(['data' => $transactionResults]);
+    }
+
+    public function test_ambiguous_and_invalid_envelopes_execute_nothing(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        $metadata = $this->schemaStatements($database->database)[0];
+        $payloads = [
+            ['channel' => $channel, 'statement' => 'SELECT 1'],
+            ['type' => 'query', 'channel' => $channel, 'statement' => 'SELECT 1', 'statements' => []],
+            ['type' => 'query', 'channel' => $channel, 'statement' => 'SELECT 1', 'extra' => true],
+            ['type' => 'unknown', 'channel' => $channel, 'statement' => 'SELECT 1'],
+            ['type' => 'query', 'channel' => $channel, 'statement' => 1],
+            ['type' => 'transaction', 'channel' => $channel, 'statements' => 'not-an-array'],
+            $this->queryPayload($channel, $metadata),
+            ['type' => 'transaction', 'channel' => $channel, 'statements' => array_slice($this->schemaStatements($database->database), 0, 5)],
+        ];
+        $executor = $this->mock(QueryExecutor::class);
+        $executor->shouldNotReceive('execute');
+        $executor->shouldNotReceive('executeBatch');
+
+        foreach ($payloads as $payload) {
+            $this->postJson($this->url($server, $database, true), $payload)
+                ->assertStatus(422)
+                ->assertExactJson(['error' => 'Query not permitted.']);
+        }
+    }
+
+    public function test_raw_request_body_limit_is_exact_before_execution(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        $json = json_encode($this->queryPayload($channel), JSON_THROW_ON_ERROR);
+        $exact = $json.str_repeat(' ', BrokerLimits::MAX_REQUEST_BYTES - strlen($json));
+        $over = $exact.' ';
+        $this->assertSame(BrokerLimits::MAX_REQUEST_BYTES, strlen($exact));
+        $executor = $this->mock(QueryExecutor::class);
+        $executor->shouldReceive('execute')->once()->withArgs(fn ($model, $operation) => $model->id === $database->id && $operation === AllowedQuery::Diagnostic)->andReturn($this->emptyResult());
+        $executor->shouldNotReceive('executeBatch');
+        $serverVariables = ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'];
+
+        $this->call('POST', $this->url($server, $database, true), [], [], [], $serverVariables, $exact)->assertOk();
+        $this->call('POST', $this->url($server, $database, true), [], [], [], $serverVariables, $over)
+            ->assertStatus(413)
+            ->assertExactJson(['error' => 'Request is too large.']);
+    }
+
+    public function test_serialized_success_response_limit_is_exact_and_never_partial(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        $exactResult = $this->emptyResult();
+        $exactResult['headers'] = [['name' => 'value', 'displayName' => 'value', 'originalType' => 'VAR_STRING', 'type' => 1]];
+        $exactResult['rows'] = [['value' => '']];
+        $emptyLength = strlen(json_encode(['data' => $exactResult], JSON_THROW_ON_ERROR));
+        $exactResult['rows'][0]['value'] = str_repeat('x', BrokerLimits::MAX_RESPONSE_BYTES - $emptyLength);
+        $overResult = $exactResult;
+        $overResult['rows'][0]['value'] .= 'x';
+        $this->assertSame(BrokerLimits::MAX_RESPONSE_BYTES, strlen(json_encode(['data' => $exactResult], JSON_THROW_ON_ERROR)));
+        $executor = $this->mock(QueryExecutor::class);
+        $executor->shouldReceive('execute')->twice()->andReturn($exactResult, $overResult);
+
+        $response = $this->postJson($this->url($server, $database, true), $this->queryPayload($channel));
+        $response->assertOk();
+        $this->assertSame(BrokerLimits::MAX_RESPONSE_BYTES, strlen($response->getContent()));
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($channel))
+            ->assertStatus(503)
+            ->assertExactJson(['error' => 'Database query failed.'])
+            ->assertDontSee(str_repeat('x', 100), false);
     }
 
     public function test_root_admin_uses_normal_pelican_access(): void
@@ -195,7 +316,7 @@ class ViewerTest extends TestCase
         [$owner, $server, $database] = $this->fixture();
         $channel = $this->open($owner, $server, $database);
         $this->app->bind(PreventRequestForgery::class, EnforcedCsrf::class);
-        $payload = ['channel' => $channel, 'statement' => 'SELECT 1'];
+        $payload = $this->queryPayload($channel);
         $this->postJson($this->url($server, $database, true), $payload)->assertStatus(419);
         $this->mock(QueryExecutor::class)->shouldReceive('execute')->once()->andReturn(['headers' => [], 'rows' => [], 'stat' => ['rowsAffected' => 0, 'rowsRead' => 0, 'rowsWritten' => null, 'queryDurationMs' => 1.0]]);
         $this->withSession(['_token' => 'test-csrf'])->postJson($this->url($server, $database, true), $payload, ['X-CSRF-TOKEN' => 'test-csrf'])->assertOk();
