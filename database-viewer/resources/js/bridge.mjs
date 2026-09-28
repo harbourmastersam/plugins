@@ -2,6 +2,9 @@ const record = value => value !== null && typeof value === 'object' && !Array.is
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const scalar = value => value === null || typeof value === 'string' || typeof value === 'boolean' || finite(value);
 const byteLength = value => new TextEncoder().encode(value).byteLength;
+const AI_MAX_MESSAGES = 12;
+const AI_MAX_CONTENT_BYTES = 24 * 1024;
+const AI_MAX_RESPONSE_BYTES = 16 * 1024;
 
 function denseArray(value, validate) {
     if (!Array.isArray(value) || Object.keys(value).length !== value.length) return false;
@@ -51,6 +54,21 @@ function copyResult(data) {
     return result;
 }
 
+function validMessages(messages) {
+    if (!denseArray(messages, message => record(message)
+        && exactKeys(message, ['role', 'content'])
+        && ['system', 'user', 'assistant'].includes(message.role)
+        && typeof message.content === 'string')) return false;
+    if (messages.length < 1 || messages.length > AI_MAX_MESSAGES) return false;
+    return messages.reduce((total, message) => total + byteLength(message.content), 0) <= AI_MAX_CONTENT_BYTES;
+}
+
+function copyAiResult(data) {
+    if (!record(data) || !exactKeys(data, ['response']) || typeof data.response !== 'string') return null;
+    if (byteLength(data.response) > AI_MAX_RESPONSE_BYTES) return null;
+    return { response: data.response };
+}
+
 function validRequest(message) {
     if (!record(message) || !Number.isSafeInteger(message.id) || !/^[a-f0-9]{32}$/.test(message.document)) return false;
     if (message.type === 'query') {
@@ -62,6 +80,10 @@ function validRequest(message) {
         return exactKeys(message, ['type', 'id', 'channel', 'document', 'statements'])
             && denseArray(message.statements, statement => typeof statement === 'string' && byteLength(statement) <= 2048)
             && message.statements.length === 6;
+    }
+    if (message.type === 'ai') {
+        return exactKeys(message, ['type', 'id', 'channel', 'document', 'messages'])
+            && validMessages(message.messages);
     }
     return false;
 }
@@ -92,22 +114,28 @@ export function createBridge({ iframe, origin, channel, broker }) {
             try {
                 const payload = message.type === 'query'
                     ? { type: 'query', statement: message.statement, channel }
-                    : { type: 'transaction', statements: [...message.statements], channel };
+                    : message.type === 'transaction'
+                        ? { type: 'transaction', statements: [...message.statements], channel }
+                        : { type: 'ai', messages: message.messages.map(item => ({ role: item.role, content: item.content })), channel };
                 const backendData = await broker(payload);
                 if (message.type === 'query') {
                     const data = copyResult(backendData);
                     if (data === null) throw new Error('Invalid result');
                     reply({ data });
-                } else {
+                } else if (message.type === 'transaction') {
                     if (!denseArray(backendData, record) || backendData.length !== message.statements.length) {
                         throw new Error('Invalid transaction result');
                     }
                     const data = backendData.map(copyResult);
                     if (data.some(item => item === null)) throw new Error('Invalid transaction result');
                     reply({ data });
+                } else {
+                    const data = copyAiResult(backendData);
+                    if (data === null) throw new Error('Invalid AI result');
+                    reply({ data });
                 }
             } catch {
-                reply({ error: 'Database query failed.' });
+                reply({ error: message.type === 'ai' ? 'AI request failed.' : 'Database query failed.' });
             } finally {
                 if (generation === current) pending.delete(pendingKey);
             }

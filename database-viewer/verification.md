@@ -1,23 +1,26 @@
-# Database Viewer 0.2.0 verification
+# Database Viewer 0.3.0 verification
 
-Recorded on 2026-09-27 against Pelican Panel `1.0.0-beta38` and the matching GreyHarbour Studio source.
+Recorded on 2026-09-28 against Pelican Panel `1.0.0-beta38` and the matching GreyHarbour Studio source.
 
 ## Automated results
 
-- Plugin PHP suite: **74 tests, 266 assertions**, PHP 8.4.26 and PHPUnit 12.5.33, with `--fail-on-notice`.
-- Browser bridge suite: **21 tests passed** with Node's built-in test runner.
-- Studio suite: **251 tests passed across 17 suites**.
-- Studio TypeScript typecheck: passed.
-- Studio ESLint: passed.
-- Studio production Next.js build: passed. The build emitted the existing workspace-root and Shiki-instance warnings; neither failed the build.
-- Laravel Pint: every PHP file added or changed for 0.2.0 passed. A repository-wide plugin check also reports pre-existing line-ending/style findings in unchanged 0.1.x files.
-- Packaging unit suite: passed. It checks exact allowlisted paths, uniqueness, fixed timestamps, regular-file modes, CRC integrity, repeatable bytes, excluded development paths, and the SHA-256 sidecar.
+- Plugin PHP suite: **78 tests, 299 assertions**, PHP 8.4.26 and PHPUnit 12.5.33.
+- Browser bridge suite: **25 tests passed** with Node's built-in test runner.
+- Studio suite: **279 tests passed across 20 suites**.
+- Studio TypeScript typecheck and ESLint: passed.
+- Laravel Pint: every PHP file added or changed for 0.3.0 passed. A repository-wide check still reports pre-existing line-ending/style findings in unchanged files.
+- Packaging unit suite: **2 tests passed**.
+- Cloudflare OpenNext production build and Wrangler dry-run deployment: passed.
 
-Tests cover exact metadata-operation ordering and shape, database quoting, malformed and oversized requests, raw and serialized size limits, fixed server-owned SQL, one-connection execution, typed serialization, unsafe result rejection, authorization and session binding, response status policy, iframe scoping, browser message identity, stable-window reload races with colliding request IDs, disposal cleanup, and generic error handling.
+Tests cover the managed AI message transport, fixed-model provider selection, strict request and response envelopes, authentication, request and response size limits, redirect refusal, generic errors, route isolation, endpoint selection, and the separate 25-second AI and 8-second database request limits. Existing schema bootstrap, authorization, session binding, serialization, message identity, lifecycle, and packaging coverage also remains green.
+
+## Production Worker check
+
+Worker version `e3c6743f-0e99-4713-8305-c9001a5abf98` was deployed to `studio.greyharbour.net`. Live checks returned HTTP 200 for an iframe navigation with `frame-ancestors https://panel.greyharbour.net`, HTTP 403 for top-level navigation, HTTP 401 for an unauthenticated AI request, and HTTP 200 with the expected response shape for an authenticated AI request.
 
 ## Installation check
 
-The final ZIP was extracted into a disposable local beta38 Panel. After recreating its SQLite development database, the supported command completed with **Plugin installed and enabled**:
+The final ZIP was extracted into a disposable local beta38 Panel. The supported install command completed successfully, caches were cleared, and the route check found the viewer GET, database broker POST, AI broker POST, and allowlisted asset GET routes.
 
 ```sh
 php artisan p:plugin:install database-viewer
@@ -25,10 +28,8 @@ php artisan optimize:clear
 php artisan route:list --name=database-viewer --except-vendor
 ```
 
-The route check found the expected viewer GET, broker POST, and allowlisted asset GET routes. The PHPUnit integration suite constructs the real Filament database table and verifies that the plugin action is visible to authorized users while core actions remain present.
-
 ## Limits
 
-The automated executor tests use PDO and connector doubles, and the disposable Panel uses SQLite for its application data. No real MariaDB connection or production browser-to-database round trip is claimed by this record. Production verification still depends on Panel network reachability, the selected database user's metadata grants, and importing this exact plugin archive after the matching Studio deployment.
+The automated executor tests use PDO and connector doubles, and the disposable Panel uses SQLite for its application data. The production Panel must set `DATABASE_VIEWER_AI_TOKEN` to the same secret stored in the Studio Worker before importing this archive.
 
-The broker provides schema discovery and `SELECT 1` only. General row queries, writes, DDL, arbitrary transactions, exports, and dumps remain outside this release.
+The database broker provides schema discovery and `SELECT 1`. The AI broker sends the current schema context and prompt through Pelican to the protected Studio Worker, which uses the fixed `@cf/meta/llama-3.3-70b-instruct-fp8-fast` Workers AI model. General row queries, writes, DDL, arbitrary transactions, exports, and dumps remain outside this release.

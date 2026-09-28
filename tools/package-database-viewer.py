@@ -21,6 +21,8 @@ RUNTIME_FILES = (
     "database-viewer/src/Enums/AllowedQuery.php",
     "database-viewer/src/Http/ViewerController.php",
     "database-viewer/src/Providers/DatabaseViewerPluginProvider.php",
+    "database-viewer/src/Services/AiBroker.php",
+    "database-viewer/src/Services/AiLimits.php",
     "database-viewer/src/Services/BrokerLimits.php",
     "database-viewer/src/Services/DatabaseResultSerializer.php",
     "database-viewer/src/Services/MariaDbExecutor.php",

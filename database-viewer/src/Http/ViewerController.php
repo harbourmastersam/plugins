@@ -4,6 +4,8 @@ namespace GreyHarbour\DatabaseViewer\Http;
 
 use App\Filament\Server\Resources\Databases\DatabaseResource;
 use GreyHarbour\DatabaseViewer\Enums\AllowedQuery;
+use GreyHarbour\DatabaseViewer\Services\AiBroker;
+use GreyHarbour\DatabaseViewer\Services\AiLimits;
 use GreyHarbour\DatabaseViewer\Services\BrokerLimits;
 use GreyHarbour\DatabaseViewer\Services\QueryExecutor;
 use GreyHarbour\DatabaseViewer\Services\SchemaBootstrapPolicy;
@@ -38,9 +40,52 @@ class ViewerController
                 PHP_QUERY_RFC3986,
             ),
             'queryUrl' => route('database-viewer.query', ['server' => $server->uuid_short, 'database' => $database->id]),
+            'aiUrl' => route('database-viewer.ai', ['server' => $server->uuid_short, 'database' => $database->id]),
             'backUrl' => DatabaseResource::getUrl('index', panel: 'server', tenant: $server),
             'databaseName' => $database->database,
         ])->header('Cache-Control', 'no-store, private')->header('Referrer-Policy', 'no-referrer');
+    }
+
+    public function ai(Request $request, string $server, string $database, AiBroker $broker)
+    {
+        [$server, $database] = $this->access->resolve($request->user(), $server, $database);
+        $rawBody = $request->getContent();
+        if (strlen($rawBody) > AiLimits::MAX_REQUEST_BYTES) {
+            return response()->json(['error' => 'AI request is too large.'], 413)->header('Cache-Control', 'no-store');
+        }
+
+        try {
+            $payload = json_decode($rawBody, true, 32, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return $this->aiPolicyError();
+        }
+        if (! is_array($payload) || array_is_list($payload)
+            || ! $this->hasExactKeys($payload, ['type', 'channel', 'messages'])
+            || ($payload['type'] ?? null) !== 'ai') {
+            return $this->aiPolicyError();
+        }
+
+        $channel = $payload['channel'] ?? null;
+        abort_unless(is_string($channel) && preg_match('/\A[A-Za-z0-9_-]{43}\z/D', $channel)
+            && $this->contexts->matches($request->session(), $channel, $request->user()->id, $server->id, $database->id), 403);
+
+        $messages = $payload['messages'] ?? null;
+        if (! $this->validAiMessages($messages)) {
+            return $this->aiPolicyError();
+        }
+
+        $start = hrtime(true);
+        $metadata = ['user_id' => $request->user()->id, 'server_id' => $server->id, 'database_id' => $database->id, 'operation' => 'ai'];
+        try {
+            $result = $broker->complete($messages);
+            Log::info('Database Viewer AI request succeeded', $metadata + ['duration_ms' => (hrtime(true) - $start) / 1_000_000]);
+
+            return response()->json(['data' => $result])->header('Cache-Control', 'no-store');
+        } catch (Throwable) {
+            Log::warning('Database Viewer AI request failed', $metadata + ['duration_ms' => (hrtime(true) - $start) / 1_000_000]);
+
+            return response()->json(['error' => 'AI request failed.'], 503)->header('Cache-Control', 'no-store');
+        }
     }
 
     public function query(
@@ -61,7 +106,7 @@ class ViewerController
         } catch (\JsonException) {
             return $this->policyError();
         }
-        if (!is_array($payload) || array_is_list($payload)) {
+        if (! is_array($payload) || array_is_list($payload)) {
             return $this->policyError();
         }
 
@@ -125,6 +170,35 @@ class ViewerController
     private function policyError()
     {
         return response()->json(['error' => 'Query not permitted.'], 422)->header('Cache-Control', 'no-store');
+    }
+
+    private function aiPolicyError()
+    {
+        return response()->json(['error' => 'AI request not permitted.'], 422)->header('Cache-Control', 'no-store');
+    }
+
+    private function validAiMessages(mixed $messages): bool
+    {
+        if (! is_array($messages) || ! array_is_list($messages)
+            || count($messages) < 1 || count($messages) > AiLimits::MAX_MESSAGES) {
+            return false;
+        }
+
+        $contentBytes = 0;
+        foreach ($messages as $message) {
+            if (! is_array($message) || array_is_list($message)
+                || ! $this->hasExactKeys($message, ['role', 'content'])
+                || ! in_array($message['role'] ?? null, ['system', 'user', 'assistant'], true)
+                || ! is_string($message['content'] ?? null)) {
+                return false;
+            }
+            $contentBytes += strlen($message['content']);
+            if ($contentBytes > AiLimits::MAX_CONTENT_BYTES) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function asset(string $asset)

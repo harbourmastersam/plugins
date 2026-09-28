@@ -8,14 +8,16 @@ const bridge = createBridge({
     broker: async payload => {
         const abort = new AbortController();
         requests.add(abort);
-        const timer = setTimeout(() => abort.abort(), 8000);
+        const timeoutMs = payload.type === 'ai' ? 25000 : 8000;
+        const timer = setTimeout(() => abort.abort(), timeoutMs);
         try {
-            const response = await fetch(iframe.dataset.queryUrl, {
+            const endpoint = payload.type === 'ai' ? iframe.dataset.aiUrl : iframe.dataset.queryUrl;
+            const response = await fetch(endpoint, {
                 method: 'POST', credentials: 'same-origin', signal: abort.signal,
                 headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content },
                 body: JSON.stringify(payload),
             });
-            if (!response.ok) throw new Error('Query failed');
+            if (!response.ok) throw new Error('Broker request failed');
             return (await response.json()).data;
         } finally {
             clearTimeout(timer); requests.delete(abort);

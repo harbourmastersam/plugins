@@ -64,6 +64,53 @@ test('valid six-result transaction preserves request and result order', async ()
     assert.deepEqual(s.sent, [[{ type: 'transaction', id: 2, channel, document: 'a'.repeat(32), data: results }, origin]]);
 });
 
+test('valid AI request forwards bounded messages and returns only the response string', async () => {
+    const messages = [
+        { role: 'system', content: 'Only return SQL' },
+        { role: 'user', content: 'Count users' },
+    ];
+    const s = setup(async () => ({ response: '```sql\nSELECT COUNT(*) FROM users\n```' }));
+    s.event.data = { type: 'ai', id: 3, channel, document: 'a'.repeat(32), messages };
+
+    await s.bridge.handle(s.event);
+
+    assert.deepEqual(s.calls, [{ type: 'ai', messages, channel }]);
+    assert.deepEqual(s.sent, [[{
+        type: 'ai', id: 3, channel, document: 'a'.repeat(32),
+        data: { response: '```sql\nSELECT COUNT(*) FROM users\n```' },
+    }, origin]]);
+});
+
+test('rejects malformed and oversized AI envelopes before fetching', async () => {
+    const valid = { role: 'user', content: 'Count users' };
+    const cases = [
+        'not-an-array',
+        [],
+        Array(13).fill(valid),
+        [{ role: 'tool', content: 'bad role' }],
+        [{ role: 'user', content: 1 }],
+        [{ role: 'user', content: 'ok', extra: true }],
+        [{ role: 'user', content: 'x'.repeat(24 * 1024 + 1) }],
+    ];
+    for (const messages of cases) {
+        const s = setup();
+        s.event.data = { type: 'ai', id: 3, channel, document: 'a'.repeat(32), messages };
+        await s.bridge.handle(s.event);
+        assert.equal(s.calls.length, 0);
+        assert.equal(s.sent.length, 0);
+    }
+});
+
+test('malformed AI broker results fail generically', async () => {
+    for (const data of [null, {}, { response: 1 }, { response: 'ok', extra: true }, { response: 'x'.repeat(16 * 1024 + 1) }]) {
+        const s = setup(async () => data);
+        s.event.data = { type: 'ai', id: 3, channel, document: 'a'.repeat(32), messages: [{ role: 'user', content: 'Count users' }] };
+        await s.bridge.handle(s.event);
+        assert.equal(s.sent[0][0].error, 'AI request failed.');
+        assert.equal('data' in s.sent[0][0], false);
+    }
+});
+
 test('transaction response length mismatch fails generically', async () => {
     const s = setup(async () => Array.from({ length: 5 }, (_, index) => result(index)));
     s.event.data = { type: 'transaction', id: 2, channel, document: 'a'.repeat(32), statements: Array(6).fill('SELECT schema') };

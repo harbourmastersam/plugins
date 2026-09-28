@@ -26,6 +26,7 @@ use Illuminate\Database\Connectors\MySqlConnector;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Foundation\Testing\TestCase;
 use Illuminate\Support\Facades\Context;
+use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 class ViewerTest extends TestCase
@@ -82,6 +83,11 @@ class ViewerTest extends TestCase
         return ['type' => 'query', 'channel' => $channel, 'statement' => $statement];
     }
 
+    private function aiUrl(Server $server, Database $database): string
+    {
+        return '/database-viewer/servers/'.$server->uuid_short.'/databases/'.$database->id.'/ai';
+    }
+
     private function emptyResult(float $duration = 0): array
     {
         return ['headers' => [], 'rows' => [], 'stat' => ['rowsAffected' => 0, 'rowsRead' => 0, 'rowsWritten' => null, 'queryDurationMs' => $duration]];
@@ -114,7 +120,7 @@ class ViewerTest extends TestCase
 
                 return ($parameters['database'] ?? null) === $database->database
                     && isset($parameters['channel'])
-                    && !isset($parameters['mode'])
+                    && ! isset($parameters['mode'])
                     && substr_count($query, 'database=') === 1;
             });
         $this->assertMatchesRegularExpression('/^[A-Za-z0-9_-]{43}$/D', $a);
@@ -212,6 +218,99 @@ class ViewerTest extends TestCase
         $this->mock(QueryExecutor::class)->shouldReceive('execute')->andThrow(new \RuntimeException('NEVER-EXPOSE-THIS /internal/path'));
         config(['app.debug' => true]);
         $this->postJson($this->url($server, $database, true), $this->queryPayload($channel))->assertStatus(503)->assertExactJson(['error' => 'Database query failed.']);
+    }
+
+    public function test_ai_request_is_reauthorized_and_forwarded_without_exposing_the_broker_token(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        config([
+            'database-viewer.ai_token' => 'SERVER-ONLY-AI-TOKEN',
+        ]);
+        Http::fake([
+            'https://studio.greyharbour.net/internal/ai' => Http::response(['response' => "```sql\nSELECT 1\n```"]),
+        ]);
+        $messages = [
+            ['role' => 'system', 'content' => 'Only return SQL'],
+            ['role' => 'user', 'content' => 'Test the connection'],
+        ];
+
+        $response = $this->postJson($this->aiUrl($server, $database), [
+            'type' => 'ai', 'channel' => $channel, 'messages' => $messages,
+        ]);
+
+        $response->assertOk()->assertExactJson(['data' => ['response' => "```sql\nSELECT 1\n```"]]);
+        Http::assertSent(fn ($request) => $request->url() === 'https://studio.greyharbour.net/internal/ai'
+            && $request->hasHeader('Authorization', 'Bearer SERVER-ONLY-AI-TOKEN')
+            && $request->data() === ['messages' => $messages]);
+        $response->assertDontSee('SERVER-ONLY-AI-TOKEN');
+    }
+
+    public function test_ai_request_fails_closed_for_invalid_context_and_envelopes(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        config([
+            'database-viewer.ai_token' => 'SERVER-ONLY-AI-TOKEN',
+        ]);
+        Http::fake();
+        $valid = ['role' => 'user', 'content' => 'Count users'];
+
+        $this->postJson($this->aiUrl($server, $database), [
+            'type' => 'ai', 'channel' => str_repeat('z', 43), 'messages' => [$valid],
+        ])->assertForbidden();
+
+        $invalid = [
+            ['channel' => $channel, 'messages' => [$valid]],
+            ['type' => 'ai', 'channel' => $channel, 'messages' => []],
+            ['type' => 'ai', 'channel' => $channel, 'messages' => array_fill(0, 13, $valid)],
+            ['type' => 'ai', 'channel' => $channel, 'messages' => [['role' => 'tool', 'content' => 'bad']]],
+            ['type' => 'ai', 'channel' => $channel, 'messages' => [['role' => 'user', 'content' => 1]]],
+            ['type' => 'ai', 'channel' => $channel, 'messages' => [['role' => 'user', 'content' => 'ok', 'extra' => true]]],
+            ['type' => 'ai', 'channel' => $channel, 'messages' => [['role' => 'user', 'content' => str_repeat('x', 24 * 1024 + 1)]]],
+            ['type' => 'ai', 'channel' => $channel, 'messages' => [$valid], 'extra' => true],
+        ];
+        foreach ($invalid as $payload) {
+            $this->postJson($this->aiUrl($server, $database), $payload)
+                ->assertStatus(422)
+                ->assertExactJson(['error' => 'AI request not permitted.']);
+        }
+        Http::assertNothingSent();
+    }
+
+    public function test_ai_broker_failures_are_generic_and_never_return_partial_content(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        config([
+            'database-viewer.ai_token' => 'SERVER-ONLY-AI-TOKEN',
+        ]);
+        Http::fake([
+            'https://studio.greyharbour.net/internal/ai' => Http::response(['error' => 'NEVER-EXPOSE-PROMPT'], 503),
+        ]);
+
+        $this->postJson($this->aiUrl($server, $database), [
+            'type' => 'ai', 'channel' => $channel,
+            'messages' => [['role' => 'user', 'content' => 'PRIVATE-PROMPT']],
+        ])->assertStatus(503)->assertExactJson(['error' => 'AI request failed.'])
+            ->assertDontSee('NEVER-EXPOSE-PROMPT')->assertDontSee('PRIVATE-PROMPT');
+    }
+
+    public function test_ai_broker_does_not_follow_redirects(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        config(['database-viewer.ai_token' => 'SERVER-ONLY-AI-TOKEN']);
+        Http::fakeSequence()
+            ->push('', 302, ['Location' => 'http://127.0.0.1/private'])
+            ->push(['response' => 'redirect target must not be reached']);
+
+        $this->postJson($this->aiUrl($server, $database), [
+            'type' => 'ai', 'channel' => $channel,
+            'messages' => [['role' => 'user', 'content' => 'test']],
+        ])->assertStatus(503)->assertExactJson(['error' => 'AI request failed.']);
+
+        Http::assertSentCount(1);
     }
 
     public function test_current_database_and_exact_schema_transaction_are_executed(): void
@@ -333,7 +432,7 @@ class ViewerTest extends TestCase
 
     public function test_context_storage_is_bounded_and_oldest_viewer_fails_closed(): void
     {
-        $contexts = new ViewerContext();
+        $contexts = new ViewerContext;
         $session = $this->app['session.store'];
         $old = $contexts->create($session, 1, 2, 3);
         for ($i = 0; $i < 20; $i++) {
@@ -363,7 +462,7 @@ class ViewerTest extends TestCase
                 && $config['options'][\PDO::MYSQL_ATTR_MULTI_STATEMENTS] === false
                 && $config['options'][\PDO::MYSQL_ATTR_INIT_COMMAND] === 'SET SESSION max_statement_time=3';
         }))->willReturn($pdo);
-        $result = (new MariaDbExecutor($connector, new DatabaseResultSerializer()))->execute($database, AllowedQuery::Diagnostic);
+        $result = (new MariaDbExecutor($connector, new DatabaseResultSerializer))->execute($database, AllowedQuery::Diagnostic);
         $this->assertSame([['1' => '1']], $result['rows']);
         $this->assertGreaterThanOrEqual(0, $result['stat']['queryDurationMs']);
         $this->assertNotSame('NEVER-EXPOSE-THIS', $database->getRawOriginal('password'));
@@ -382,7 +481,7 @@ class ViewerTest extends TestCase
         $connector = $this->createStub(MySqlConnector::class);
         $connector->method('connect')->willReturn($pdo);
         $this->expectException(\RuntimeException::class);
-        (new MariaDbExecutor($connector, new DatabaseResultSerializer()))->execute($database, AllowedQuery::Diagnostic);
+        (new MariaDbExecutor($connector, new DatabaseResultSerializer))->execute($database, AllowedQuery::Diagnostic);
     }
 
     public function test_supported_table_hook_appends_action_and_preserves_core_actions(): void

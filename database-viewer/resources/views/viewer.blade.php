@@ -25,6 +25,6 @@
     </header>
     <iframe id="database-viewer" title="Database Viewer Studio" sandbox="allow-scripts allow-same-origin"
         referrerpolicy="no-referrer" data-src="{{ $iframeUrl }}" data-origin="{{ $origin }}"
-        data-channel="{{ $channel }}" data-query-url="{{ $queryUrl }}"></iframe>
+        data-channel="{{ $channel }}" data-query-url="{{ $queryUrl }}" data-ai-url="{{ $aiUrl }}"></iframe>
 </body>
 </html>

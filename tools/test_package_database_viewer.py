@@ -33,7 +33,7 @@ class DatabaseViewerPackageTest(unittest.TestCase):
         archive_path, digest = packager.package_plugin(REPO)
         repeated_path, repeated_digest = packager.package_plugin(REPO)
 
-        self.assertEqual("database-viewer-0.2.0.zip", archive_path.name)
+        self.assertEqual("database-viewer-0.3.0.zip", archive_path.name)
         self.assertEqual(64, len(digest))
         self.assertEqual(archive_path, repeated_path)
         self.assertEqual(digest, repeated_digest)
