@@ -19,7 +19,7 @@
     <header>
         <a href="{{ $backUrl }}">Back to databases</a>
         <h1>Database Viewer — {{ $databaseName }}</h1>
-        <p>Studio can read schema metadata for this database. Table rows, writes, exports, and arbitrary SQL remain unavailable.</p>
+        <p id="sql-access-mode">{{ $sqlAccessLabel }}</p>
         <p>The explicit <code>mode=probe</code> URL remains available for a diagnostic <code>SELECT 1</code> connection test.</p>
         <p id="viewer-status" role="status">Loading Studio…</p>
     </header>

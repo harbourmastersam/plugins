@@ -22,7 +22,7 @@ class ViewerController
 
     public function show(Request $request, string $server, string $database)
     {
-        [$server, $database] = $this->access->resolve($request->user(), $server, $database);
+        [$server, $database, $accessMode] = $this->access->resolve($request->user(), $server, $database);
         try {
             $origin = StudioOrigin::validate(config('database-viewer.studio_origin'));
         } catch (\InvalidArgumentException) {
@@ -43,6 +43,7 @@ class ViewerController
             'aiUrl' => route('database-viewer.ai', ['server' => $server->uuid_short, 'database' => $database->id]),
             'backUrl' => DatabaseResource::getUrl('index', panel: 'server', tenant: $server),
             'databaseName' => $database->database,
+            'sqlAccessLabel' => $accessMode->value === 'full' ? 'Full SQL access' : 'Read-only SQL access',
         ])->header('Cache-Control', 'no-store, private')->header('Referrer-Policy', 'no-referrer');
     }
 

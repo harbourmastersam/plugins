@@ -6,10 +6,11 @@ use App\Enums\SubuserPermission;
 use App\Models\Database;
 use App\Models\Server;
 use App\Models\User;
+use GreyHarbour\DatabaseViewer\Enums\SqlAccessMode;
 
 class ViewerAccess
 {
-    /** @return array{Server, Database} */
+    /** @return array{Server, Database, SqlAccessMode} */
     public function resolve(?User $user, string $serverKey, string $databaseId): array
     {
         abort_unless($user, 401);
@@ -19,7 +20,10 @@ class ViewerAccess
         abort_unless($user->can(SubuserPermission::DatabaseRead, $server), 403);
         abort_if($server->isInConflictState(), 403);
         $database = $server->databases()->whereKey($databaseId)->firstOrFail();
+        $mode = $user->can(SubuserPermission::DatabaseUpdate, $server)
+            ? SqlAccessMode::Full
+            : SqlAccessMode::ReadOnly;
 
-        return [$server, $database];
+        return [$server, $database, $mode];
     }
 }

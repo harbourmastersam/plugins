@@ -157,7 +157,53 @@ class ViewerTest extends TestCase
         [, $server, $database] = $this->fixture();
         $user = User::factory()->create();
         Subuser::create(['user_id' => $user->id, 'server_id' => $server->id, 'permissions' => [SubuserPermission::DatabaseRead->value]]);
-        $this->open($user, $server, $database);
+        $this->actingAs($user)->get($this->url($server, $database))
+            ->assertOk()
+            ->assertSee('Read-only SQL access');
+    }
+
+    public function test_owner_and_subuser_with_database_update_see_full_sql_access(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $this->actingAs($owner)->get($this->url($server, $database))
+            ->assertOk()
+            ->assertSee('Full SQL access');
+
+        $user = User::factory()->create();
+        Subuser::create([
+            'user_id' => $user->id,
+            'server_id' => $server->id,
+            'permissions' => [
+                SubuserPermission::DatabaseRead->value,
+                SubuserPermission::DatabaseUpdate->value,
+            ],
+        ]);
+        $this->actingAs($user)->get($this->url($server, $database))
+            ->assertOk()
+            ->assertSee('Full SQL access');
+    }
+
+    public function test_revoking_database_update_permission_changes_the_next_view_to_read_only(): void
+    {
+        [, $server, $database] = $this->fixture();
+        $user = User::factory()->create();
+        $subuser = Subuser::create([
+            'user_id' => $user->id,
+            'server_id' => $server->id,
+            'permissions' => [
+                SubuserPermission::DatabaseRead->value,
+                SubuserPermission::DatabaseUpdate->value,
+            ],
+        ]);
+
+        $this->actingAs($user)->get($this->url($server, $database))
+            ->assertOk()
+            ->assertSee('Full SQL access');
+        $subuser->update(['permissions' => [SubuserPermission::DatabaseRead->value]]);
+        $server->unsetRelation('subusers');
+        $this->get($this->url($server, $database))
+            ->assertOk()
+            ->assertSee('Read-only SQL access');
     }
 
     public function test_foreign_database_and_deleted_database_are_denied(): void
