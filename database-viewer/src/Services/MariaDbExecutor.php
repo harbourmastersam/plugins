@@ -4,8 +4,11 @@ namespace GreyHarbour\DatabaseViewer\Services;
 
 use App\Models\Database;
 use GreyHarbour\DatabaseViewer\Enums\AllowedQuery;
+use GreyHarbour\DatabaseViewer\Enums\SqlAccessMode;
+use GreyHarbour\DatabaseViewer\Exceptions\DatabaseStatementException;
 use Illuminate\Database\Connectors\MySqlConnector;
 use PDO;
+use PDOException;
 use RuntimeException;
 
 class MariaDbExecutor implements QueryExecutor
@@ -54,6 +57,40 @@ class MariaDbExecutor implements QueryExecutor
         return $results;
     }
 
+    public function executeStatement(Database $database, string $statement, SqlAccessMode $mode): array
+    {
+        $connection = $this->connect($database);
+        if ($mode === SqlAccessMode::Full) {
+            return $this->executeGeneralOnConnection($connection, $statement);
+        }
+
+        if ($connection->exec('SET TRANSACTION READ ONLY') === false || !$connection->beginTransaction()) {
+            throw new RuntimeException('Unable to start a read-only database transaction.');
+        }
+        try {
+            return $this->executeGeneralOnConnection($connection, $statement);
+        } finally {
+            if ($connection->inTransaction()) {
+                $connection->rollBack();
+            }
+        }
+    }
+
+    public function executeStatements(Database $database, array $statements, SqlAccessMode $mode): array
+    {
+        if ($mode !== SqlAccessMode::Full) {
+            throw new RuntimeException('General SQL batches require full access.');
+        }
+
+        $connection = $this->connect($database);
+        $results = [];
+        foreach ($statements as $statement) {
+            $results[] = $this->executeGeneralOnConnection($connection, $statement);
+        }
+
+        return $results;
+    }
+
     private function connect(Database $database): PDO
     {
         $host = $database->host;
@@ -86,6 +123,25 @@ class MariaDbExecutor implements QueryExecutor
         }
 
         return $this->serializer->serialize($statement, (hrtime(true) - $start) / 1_000_000);
+    }
+
+    private function executeGeneralOnConnection(PDO $connection, string $sql): array
+    {
+        $start = hrtime(true);
+        try {
+            $statement = $connection->prepare($sql);
+            if ($statement === false || !$statement->execute([])) {
+                throw new RuntimeException('Database operation failed.');
+            }
+        } catch (PDOException $exception) {
+            throw DatabaseStatementException::fromPdo($exception, $sql);
+        }
+
+        return $this->serializer->serialize(
+            $statement,
+            (hrtime(true) - $start) / 1_000_000,
+            $connection->lastInsertId(),
+        );
     }
 
     /** @return array{string, list<string>} */
