@@ -3,6 +3,7 @@
 namespace GreyHarbour\DatabaseViewer\Tests;
 
 use GreyHarbour\DatabaseViewer\Services\DatabaseResultSerializer;
+use GreyHarbour\DatabaseViewer\Services\BrokerLimits;
 use PDO;
 use PDOStatement;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -15,9 +16,23 @@ class DatabaseResultSerializerTest extends TestCase
     private function statement(array $rows, array $metadata): PDOStatement
     {
         $statement = $this->createMock(PDOStatement::class);
-        $statement->expects($this->once())->method('fetchAll')->with(PDO::FETCH_ASSOC)->willReturn($rows);
+        $statement->expects($this->atLeastOnce())
+            ->method('fetch')
+            ->with(PDO::FETCH_ASSOC)
+            ->willReturnOnConsecutiveCalls(...array_merge($rows, [false]));
+        $statement->expects($this->never())->method('fetchAll');
         $statement->method('columnCount')->willReturn(count($metadata));
         $statement->method('getColumnMeta')->willReturnCallback(fn (int $index) => $metadata[$index]);
+
+        return $statement;
+    }
+
+    private function command(int $rowCount): PDOStatement
+    {
+        $statement = $this->createMock(PDOStatement::class);
+        $statement->method('columnCount')->willReturn(0);
+        $statement->expects($this->once())->method('rowCount')->willReturn($rowCount);
+        $statement->expects($this->never())->method('fetch');
 
         return $statement;
     }
@@ -78,6 +93,51 @@ class DatabaseResultSerializerTest extends TestCase
         $this->assertSame([['positive' => '9007199254740992', 'negative' => '-9007199254740992']], $result['rows']);
     }
 
+    public function test_commands_report_write_statistics_and_safe_insert_id(): void
+    {
+        $result = (new DatabaseResultSerializer())->serialize($this->command(3), 4.5, '9007199254740991');
+
+        $this->assertSame([], $result['headers']);
+        $this->assertSame([], $result['rows']);
+        $this->assertSame([
+            'rowsAffected' => 3,
+            'rowsRead' => 0,
+            'rowsWritten' => 3,
+            'queryDurationMs' => 4.5,
+        ], $result['stat']);
+        $this->assertSame(9007199254740991, $result['lastInsertRowid']);
+    }
+
+    #[DataProvider('omittedInsertIds')]
+    public function test_unsafe_or_non_decimal_insert_ids_are_omitted(string|false $insertId): void
+    {
+        $result = (new DatabaseResultSerializer())->serialize($this->command(0), 0, $insertId);
+
+        $this->assertArrayNotHasKey('lastInsertRowid', $result);
+    }
+
+    public static function omittedInsertIds(): array
+    {
+        return [
+            'not requested' => [false],
+            'oversized' => ['9007199254740992'],
+            'negative' => ['-1'],
+            'non decimal' => ['1e3'],
+        ];
+    }
+
+    public function test_encoded_size_overflow_aborts_without_returning_partial_rows(): void
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('response limit');
+
+        (new DatabaseResultSerializer())->serialize($this->statement([
+            ['value' => str_repeat('x', BrokerLimits::MAX_RESPONSE_BYTES)],
+        ], [
+            ['name' => 'value', 'native_type' => 'VAR_STRING'],
+        ]), 0);
+    }
+
     public static function unsafeValues(): array
     {
         return [
@@ -118,7 +178,7 @@ class DatabaseResultSerializerTest extends TestCase
     public function test_column_metadata_failure_aborts_serialization(): void
     {
         $statement = $this->createStub(PDOStatement::class);
-        $statement->method('fetchAll')->willReturn([]);
+        $statement->method('fetch')->willReturn(false);
         $statement->method('columnCount')->willReturn(1);
         $statement->method('getColumnMeta')->willThrowException(new RuntimeException('metadata failed'));
 

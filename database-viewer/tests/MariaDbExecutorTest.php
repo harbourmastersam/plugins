@@ -42,7 +42,7 @@ class MariaDbExecutorTest extends TestCase
     {
         $statement = $this->createMock(PDOStatement::class);
         $statement->expects($this->once())->method('execute')->willReturn(true);
-        $statement->method('fetchAll')->with(PDO::FETCH_ASSOC)->willReturn($rows);
+        $statement->method('fetch')->with(PDO::FETCH_ASSOC)->willReturnOnConsecutiveCalls(...array_merge($rows, [false]));
         $statement->method('columnCount')->willReturn($rows === [] ? 0 : count($rows[0]));
         $statement->method('getColumnMeta')->willReturn(false);
 
@@ -93,7 +93,7 @@ class MariaDbExecutorTest extends TestCase
         foreach (range(1, 6) as $index) {
             $statement = $this->createMock(PDOStatement::class);
             $statement->expects($this->once())->method('execute')->with(["tenant's_data"])->willReturn(true);
-            $statement->method('fetchAll')->willReturn([['result' => $index]]);
+            $statement->method('fetch')->with(PDO::FETCH_ASSOC)->willReturnOnConsecutiveCalls(['result' => $index], false);
             $statement->method('columnCount')->willReturn(1);
             $statement->method('getColumnMeta')->willReturn(false);
             $prepared[] = $statement;

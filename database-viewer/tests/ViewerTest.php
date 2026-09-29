@@ -494,7 +494,7 @@ class ViewerTest extends TestCase
         [, , $database] = $this->fixture();
         $statement = $this->createMock(\PDOStatement::class);
         $statement->expects($this->once())->method('execute')->with([])->willReturn(true);
-        $statement->expects($this->once())->method('fetchAll')->with(\PDO::FETCH_ASSOC)->willReturn([['1' => '1']]);
+        $statement->expects($this->exactly(2))->method('fetch')->with(\PDO::FETCH_ASSOC)->willReturnOnConsecutiveCalls(['1' => '1'], false);
         $statement->method('columnCount')->willReturn(1);
         $statement->method('getColumnMeta')->willReturn(['name' => '1', 'native_type' => 'LONG']);
         $pdo = $this->createMock(\PDO::class);
@@ -522,7 +522,7 @@ class ViewerTest extends TestCase
         [, , $database] = $this->fixture();
         $statement = $this->createStub(\PDOStatement::class);
         $statement->method('execute')->willReturn(true);
-        $statement->method('fetchAll')->willReturn([['1' => []]]);
+        $statement->method('fetch')->willReturn(['1' => []]);
         $statement->method('columnCount')->willReturn(1);
         $statement->method('getColumnMeta')->willReturn(false);
         $pdo = $this->createStub(\PDO::class);

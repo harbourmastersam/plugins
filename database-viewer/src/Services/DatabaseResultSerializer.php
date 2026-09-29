@@ -10,34 +10,79 @@ final class DatabaseResultSerializer
 {
     private const MAX_SAFE_INTEGER = 9007199254740991;
 
-    public function serialize(PDOStatement $statement, float $durationMs): array
+    public function serialize(PDOStatement $statement, float $durationMs, string|false $lastInsertId = false): array
     {
         if (!is_finite($durationMs) || $durationMs < 0) {
             throw new RuntimeException('Invalid query duration.');
         }
 
-        $rawRows = $statement->fetchAll(PDO::FETCH_ASSOC);
-        if (!is_array($rawRows) || !array_is_list($rawRows)) {
-            throw new RuntimeException('Invalid database result rows.');
+        $columnCount = $statement->columnCount();
+        if ($columnCount === 0) {
+            $rowsAffected = $statement->rowCount();
+            $result = [
+                'headers' => [],
+                'rows' => [],
+                'stat' => [
+                    'rowsAffected' => $rowsAffected,
+                    'rowsRead' => 0,
+                    'rowsWritten' => $rowsAffected,
+                    'queryDurationMs' => $durationMs,
+                ],
+            ];
+            if ($this->safeInsertId($lastInsertId) !== null) {
+                $result['lastInsertRowid'] = $this->safeInsertId($lastInsertId);
+            }
+            $this->assertResponseFits($result);
+
+            return $result;
         }
 
+        $firstRawRow = $statement->fetch(PDO::FETCH_ASSOC);
+        if ($firstRawRow !== false && !is_array($firstRawRow)) {
+            throw new RuntimeException('Invalid database result row.');
+        }
+        $fallbackNames = is_array($firstRawRow) ? array_map('strval', array_keys($firstRawRow)) : [];
+        $headers = $this->headers($statement, $columnCount, $fallbackNames);
         $rows = [];
-        foreach ($rawRows as $rawRow) {
-            if (!is_array($rawRow)) {
-                throw new RuntimeException('Invalid database result row.');
-            }
+        $encodedRowBytes = 0;
+        $rawRow = $firstRawRow;
+        while ($rawRow !== false) {
             $row = [];
             foreach ($rawRow as $name => $value) {
                 $columnName = (string) $name;
                 $this->assertUtf8($columnName);
                 $row[$columnName] = $this->safeValue($value);
             }
+            $encodedRowBytes += strlen(json_encode($row, JSON_THROW_ON_ERROR)) + 1;
+            if ($encodedRowBytes > BrokerLimits::MAX_RESPONSE_BYTES) {
+                throw new RuntimeException('Database result exceeds the response limit.');
+            }
             $rows[] = $row;
+            $rawRow = $statement->fetch(PDO::FETCH_ASSOC);
+            if ($rawRow !== false && !is_array($rawRow)) {
+                throw new RuntimeException('Invalid database result row.');
+            }
         }
 
-        $fallbackNames = $rawRows === [] ? [] : array_map('strval', array_keys($rawRows[0]));
+        $result = [
+            'headers' => $headers,
+            'rows' => $rows,
+            'stat' => [
+                'rowsAffected' => 0,
+                'rowsRead' => count($rows),
+                'rowsWritten' => null,
+                'queryDurationMs' => $durationMs,
+            ],
+        ];
+        $this->assertResponseFits($result);
+
+        return $result;
+    }
+
+    /** @param list<string> $fallbackNames */
+    private function headers(PDOStatement $statement, int $columnCount, array $fallbackNames): array
+    {
         $headers = [];
-        $columnCount = $statement->columnCount();
         for ($index = 0; $index < $columnCount; $index++) {
             $metadata = $statement->getColumnMeta($index);
             $name = is_array($metadata) && isset($metadata['name']) && is_string($metadata['name'])
@@ -61,16 +106,27 @@ final class DatabaseResultSerializer
             ];
         }
 
-        return [
-            'headers' => $headers,
-            'rows' => $rows,
-            'stat' => [
-                'rowsAffected' => 0,
-                'rowsRead' => count($rows),
-                'rowsWritten' => null,
-                'queryDurationMs' => $durationMs,
-            ],
-        ];
+        return $headers;
+    }
+
+    private function safeInsertId(string|false $lastInsertId): ?int
+    {
+        if (!is_string($lastInsertId)
+            || preg_match('/\A(?:0|[1-9][0-9]*)\z/D', $lastInsertId) !== 1
+            || strlen($lastInsertId) > 16
+            || (strlen($lastInsertId) === 16 && strcmp($lastInsertId, (string) self::MAX_SAFE_INTEGER) > 0)) {
+            return null;
+        }
+
+        return (int) $lastInsertId;
+    }
+
+    private function assertResponseFits(array $result): void
+    {
+        $json = json_encode(['data' => $result], JSON_THROW_ON_ERROR);
+        if (strlen($json) > BrokerLimits::MAX_RESPONSE_BYTES) {
+            throw new RuntimeException('Database result exceeds the response limit.');
+        }
     }
 
     private function safeValue(mixed $value): string|int|float|bool|null
