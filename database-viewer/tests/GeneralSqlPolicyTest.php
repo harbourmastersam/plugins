@@ -50,7 +50,7 @@ class GeneralSqlPolicyTest extends TestCase
             'DELETE FROM users',
             'CREATE TABLE x (id INT)',
             'CALL mutate_users()',
-            "WITH changed AS (UPDATE users SET active = 1 RETURNING *) SELECT * FROM changed",
+            'WITH changed AS (UPDATE users SET active = 1 RETURNING *) SELECT * FROM changed',
             "SELECT * FROM users INTO OUTFILE '/tmp/users'",
             "SELECT * FROM users INTO DUMPFILE '/tmp/users'",
             'SELECT * FROM users FOR UPDATE',

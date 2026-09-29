@@ -31,7 +31,6 @@ use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use PDOException;
-use PHPUnit\Framework\Attributes\DataProvider;
 
 class ViewerTest extends TestCase
 {
@@ -124,7 +123,7 @@ class ViewerTest extends TestCase
 
                 return ($parameters['database'] ?? null) === $database->database
                     && isset($parameters['channel'])
-                    && ! isset($parameters['mode'])
+                    && !isset($parameters['mode'])
                     && substr_count($query, 'database=') === 1;
             });
         $this->assertMatchesRegularExpression('/^[A-Za-z0-9_-]{43}$/D', $a);
@@ -607,7 +606,7 @@ class ViewerTest extends TestCase
 
     public function test_context_storage_is_bounded_and_oldest_viewer_fails_closed(): void
     {
-        $contexts = new ViewerContext;
+        $contexts = new ViewerContext();
         $session = $this->app['session.store'];
         $old = $contexts->create($session, 1, 2, 3);
         for ($i = 0; $i < 20; $i++) {
@@ -640,7 +639,7 @@ class ViewerTest extends TestCase
                     \Greyharbour\DatabaseViewer\Services\BrokerLimits::STATEMENT_TIMEOUT_SECONDS,
                 );
         }))->willReturn($pdo);
-        $result = (new MariaDbExecutor($connector, new DatabaseResultSerializer))->execute($database, AllowedQuery::Diagnostic);
+        $result = (new MariaDbExecutor($connector, new DatabaseResultSerializer()))->execute($database, AllowedQuery::Diagnostic);
         $this->assertSame([['1' => '1']], $result['rows']);
         $this->assertGreaterThanOrEqual(0, $result['stat']['queryDurationMs']);
         $this->assertNotSame('NEVER-EXPOSE-THIS', $database->getRawOriginal('password'));
@@ -659,7 +658,7 @@ class ViewerTest extends TestCase
         $connector = $this->createStub(MySqlConnector::class);
         $connector->method('connect')->willReturn($pdo);
         $this->expectException(\RuntimeException::class);
-        (new MariaDbExecutor($connector, new DatabaseResultSerializer))->execute($database, AllowedQuery::Diagnostic);
+        (new MariaDbExecutor($connector, new DatabaseResultSerializer()))->execute($database, AllowedQuery::Diagnostic);
     }
 
     public function test_supported_table_hook_appends_action_and_preserves_core_actions(): void

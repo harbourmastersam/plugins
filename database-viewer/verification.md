@@ -4,7 +4,7 @@ Recorded on 2026-09-30 against Pelican Panel `1.0.0-beta38` and the matching Gre
 
 ## Automated results
 
-- Plugin PHP suite: **119 tests, 433 assertions**, PHP 8.4.26 and PHPUnit 12.5.33.
+- Plugin PHP suite: **121 tests, 440 assertions**, PHP 8.4.26 and PHPUnit 12.5.33.
 - Browser bridge and viewer suite: **27 tests passed** with Node's built-in test runner.
 - Packaging unit suite: **3 tests passed**.
 - Deterministic archive creation, ZIP CRC validation, runtime allowlist inspection, and SHA-256 sidecar verification passed.

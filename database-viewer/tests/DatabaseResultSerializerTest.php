@@ -2,8 +2,8 @@
 
 namespace GreyHarbour\DatabaseViewer\Tests;
 
-use GreyHarbour\DatabaseViewer\Services\DatabaseResultSerializer;
 use GreyHarbour\DatabaseViewer\Services\BrokerLimits;
+use GreyHarbour\DatabaseViewer\Services\DatabaseResultSerializer;
 use PDO;
 use PDOStatement;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -120,6 +120,7 @@ class DatabaseResultSerializerTest extends TestCase
     {
         return [
             'not requested' => [false],
+            'zero means no generated id' => ['0'],
             'oversized' => ['9007199254740992'],
             'negative' => ['-1'],
             'non decimal' => ['1e3'],

@@ -29,8 +29,9 @@ final class DatabaseResultSerializer
                     'queryDurationMs' => $durationMs,
                 ],
             ];
-            if ($this->safeInsertId($lastInsertId) !== null) {
-                $result['lastInsertRowid'] = $this->safeInsertId($lastInsertId);
+            $safeInsertId = $this->safeInsertId($lastInsertId);
+            if ($safeInsertId !== null) {
+                $result['lastInsertRowid'] = $safeInsertId;
             }
             $this->assertResponseFits($result);
 
@@ -112,7 +113,7 @@ final class DatabaseResultSerializer
     private function safeInsertId(string|false $lastInsertId): ?int
     {
         if (!is_string($lastInsertId)
-            || preg_match('/\A(?:0|[1-9][0-9]*)\z/D', $lastInsertId) !== 1
+            || preg_match('/\A[1-9][0-9]*\z/D', $lastInsertId) !== 1
             || strlen($lastInsertId) > 16
             || (strlen($lastInsertId) === 16 && strcmp($lastInsertId, (string) self::MAX_SAFE_INTEGER) > 0)) {
             return null;

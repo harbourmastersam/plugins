@@ -310,4 +310,24 @@ class MariaDbExecutorTest extends TestCase
             $this->assertStringNotContainsString($secret, $diagnostic);
         }
     }
+
+    public function test_statement_diagnostics_redact_partial_sql_and_database_identity_fragments(): void
+    {
+        $failure = new PDOException('driver failure');
+        $failure->errorInfo = [
+            '42000',
+            1064,
+            "Syntax error near 'FROM private_table WHERE token = 123' for user 'tenant_user'@'db.internal'",
+        ];
+
+        $diagnostic = DatabaseStatementException::fromPdo(
+            $failure,
+            'SELECT secret_value FROM private_table WHERE token = 123',
+        )->diagnostic();
+
+        foreach (['private_table', 'token = 123', 'tenant_user', 'db.internal'] as $secret) {
+            $this->assertStringNotContainsString($secret, $diagnostic);
+        }
+        $this->assertStringContainsString('Syntax error near [redacted]', $diagnostic);
+    }
 }

@@ -63,8 +63,8 @@ class ViewerController
         } catch (\JsonException) {
             return $this->aiPolicyError();
         }
-        if (! is_array($payload) || array_is_list($payload)
-            || ! $this->hasExactKeys($payload, ['type', 'channel', 'messages'])
+        if (!is_array($payload) || array_is_list($payload)
+            || !$this->hasExactKeys($payload, ['type', 'channel', 'messages'])
             || ($payload['type'] ?? null) !== 'ai') {
             return $this->aiPolicyError();
         }
@@ -74,7 +74,7 @@ class ViewerController
             && $this->contexts->matches($request->session(), $channel, $request->user()->id, $server->id, $database->id), 403);
 
         $messages = $payload['messages'] ?? null;
-        if (! $this->validAiMessages($messages)) {
+        if (!$this->validAiMessages($messages)) {
             return $this->aiPolicyError();
         }
 
@@ -111,7 +111,7 @@ class ViewerController
         } catch (\JsonException) {
             return $this->policyError();
         }
-        if (! is_array($payload) || array_is_list($payload)) {
+        if (!is_array($payload) || array_is_list($payload)) {
             return $this->policyError();
         }
 
@@ -239,17 +239,17 @@ class ViewerController
 
     private function validAiMessages(mixed $messages): bool
     {
-        if (! is_array($messages) || ! array_is_list($messages)
+        if (!is_array($messages) || !array_is_list($messages)
             || count($messages) < 1 || count($messages) > AiLimits::MAX_MESSAGES) {
             return false;
         }
 
         $contentBytes = 0;
         foreach ($messages as $message) {
-            if (! is_array($message) || array_is_list($message)
-                || ! $this->hasExactKeys($message, ['role', 'content'])
-                || ! in_array($message['role'] ?? null, ['system', 'user', 'assistant'], true)
-                || ! is_string($message['content'] ?? null)) {
+            if (!is_array($message) || array_is_list($message)
+                || !$this->hasExactKeys($message, ['role', 'content'])
+                || !in_array($message['role'] ?? null, ['system', 'user', 'assistant'], true)
+                || !is_string($message['content'] ?? null)) {
                 return false;
             }
             $contentBytes += strlen($message['content']);

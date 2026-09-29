@@ -51,6 +51,7 @@ final class DatabaseStatementException extends RuntimeException
             $message = str_ireplace($statement, '[SQL redacted]', $message);
         }
         $patterns = [
+            "/'[^']*'|\"[^\"]*\"|`[^`]*`/",
             '/mysql:[^\s]+/i',
             '/\b(?:password|passwd|pwd|username|user)\s*=\s*[^\s;]+/i',
             '/\b[A-Z]:[\\\\\/][^\s]+/i',

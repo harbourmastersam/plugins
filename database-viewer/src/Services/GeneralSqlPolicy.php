@@ -100,12 +100,14 @@ final class GeneralSqlPolicy
             $character = $statement[$index];
             if (ctype_space($character)) {
                 $index++;
+
                 continue;
             }
             if ($character === '#' || ($character === '-' && ($statement[$index + 1] ?? '') === '-'
                 && (($next = $statement[$index + 2] ?? '') === '' || ctype_space($next)))) {
                 $newline = strpos($statement, "\n", $index + 1);
                 $index = $newline === false ? $length : $newline + 1;
+
                 continue;
             }
             if ($character === '/' && ($statement[$index + 1] ?? '') === '*') {
@@ -117,6 +119,7 @@ final class GeneralSqlPolicy
                     return null;
                 }
                 $index = $end + 2;
+
                 continue;
             }
             if (in_array($character, ["'", '"', '`'], true)) {
@@ -126,12 +129,14 @@ final class GeneralSqlPolicy
                 }
                 $tokens[] = ['value' => '?', 'depth' => $depth];
                 $index = $nextIndex;
+
                 continue;
             }
             if ($character === '(') {
                 $tokens[] = ['value' => '?', 'depth' => $depth];
                 $depth++;
                 $index++;
+
                 continue;
             }
             if ($character === ')') {
@@ -140,11 +145,13 @@ final class GeneralSqlPolicy
                 }
                 $tokens[] = ['value' => '?', 'depth' => $depth];
                 $index++;
+
                 continue;
             }
             if ($character === ';') {
                 $tokens[] = ['value' => ';', 'depth' => $depth];
                 $index++;
+
                 continue;
             }
             if (ctype_alpha($character) || $character === '_') {
@@ -153,6 +160,7 @@ final class GeneralSqlPolicy
                     $index++;
                 }
                 $tokens[] = ['value' => strtoupper(substr($statement, $start, $index - $start)), 'depth' => $depth];
+
                 continue;
             }
             $tokens[] = ['value' => '?', 'depth' => $depth];
@@ -168,6 +176,7 @@ final class GeneralSqlPolicy
         for ($index++; $index < $length; $index++) {
             if ($statement[$index] === '\\' && $delimiter !== '`') {
                 $index++;
+
                 continue;
             }
             if ($statement[$index] !== $delimiter) {
@@ -175,6 +184,7 @@ final class GeneralSqlPolicy
             }
             if (($statement[$index + 1] ?? '') === $delimiter) {
                 $index++;
+
                 continue;
             }
 
@@ -195,5 +205,4 @@ final class GeneralSqlPolicy
 
         return false;
     }
-
 }
