@@ -4,9 +4,12 @@ namespace GreyHarbour\DatabaseViewer\Http;
 
 use App\Filament\Server\Resources\Databases\DatabaseResource;
 use GreyHarbour\DatabaseViewer\Enums\AllowedQuery;
+use GreyHarbour\DatabaseViewer\Enums\SqlAccessMode;
+use GreyHarbour\DatabaseViewer\Exceptions\DatabaseStatementException;
 use GreyHarbour\DatabaseViewer\Services\AiBroker;
 use GreyHarbour\DatabaseViewer\Services\AiLimits;
 use GreyHarbour\DatabaseViewer\Services\BrokerLimits;
+use GreyHarbour\DatabaseViewer\Services\GeneralSqlPolicy;
 use GreyHarbour\DatabaseViewer\Services\QueryExecutor;
 use GreyHarbour\DatabaseViewer\Services\SchemaBootstrapPolicy;
 use GreyHarbour\DatabaseViewer\Services\StudioOrigin;
@@ -94,9 +97,10 @@ class ViewerController
         string $server,
         string $database,
         QueryExecutor $executor,
-        SchemaBootstrapPolicy $policy,
+        SchemaBootstrapPolicy $schemaPolicy,
+        GeneralSqlPolicy $sqlPolicy,
     ) {
-        [$server, $database] = $this->access->resolve($request->user(), $server, $database);
+        [$server, $database, $accessMode] = $this->access->resolve($request->user(), $server, $database);
         $rawBody = $request->getContent();
         if (strlen($rawBody) > BrokerLimits::MAX_REQUEST_BYTES) {
             return response()->json(['error' => 'Request is too large.'], 413)->header('Cache-Control', 'no-store');
@@ -118,30 +122,52 @@ class ViewerController
         $type = $payload['type'] ?? null;
         $operation = null;
         $operations = null;
+        $statement = null;
+        $statements = null;
         if ($type === 'query' && $this->hasExactKeys($payload, ['type', 'channel', 'statement'])) {
-            $statement = $payload['statement'];
-            if (is_string($statement)) {
-                $operation = $policy->classifyQuery($database, $statement);
+            $candidate = $payload['statement'];
+            if (is_string($candidate)) {
+                $operation = $schemaPolicy->classifyQuery($database, $candidate);
+                if ($operation === null && $sqlPolicy->validStatement($candidate)
+                    && ($accessMode === SqlAccessMode::Full || $sqlPolicy->allowsReadOnly($candidate))) {
+                    $statement = $candidate;
+                }
             }
         } elseif ($type === 'transaction' && $this->hasExactKeys($payload, ['type', 'channel', 'statements'])) {
-            $statements = $payload['statements'];
-            if (is_array($statements)) {
-                $operations = $policy->classifyTransaction($database, $statements);
+            $candidates = $payload['statements'];
+            if (is_array($candidates)) {
+                $operations = $schemaPolicy->classifyTransaction($database, $candidates);
+                if ($operations === null && $accessMode === SqlAccessMode::Full && $sqlPolicy->validBatch($candidates)) {
+                    $statements = $candidates;
+                }
             }
         }
-        if ($operation === null && $operations === null) {
+        if ($operation === null && $operations === null && $statement === null && $statements === null) {
             return $this->policyError();
         }
 
-        $operationClass = $operation?->value ?? 'schema_bootstrap';
-        $metadata = ['user_id' => $request->user()->id, 'server_id' => $server->id, 'database_id' => $database->id, 'operation' => $operationClass];
+        $statementCount = $type === 'query' ? 1 : count($operations ?? $statements);
+        $metadata = [
+            'user_id' => $request->user()->id,
+            'server_id' => $server->id,
+            'database_id' => $database->id,
+            'access_mode' => $accessMode->value,
+            'request_kind' => $type,
+            'statement_count' => $statementCount,
+        ];
         $start = hrtime(true);
         try {
             if ($operation instanceof AllowedQuery) {
                 $result = $executor->execute($database, $operation);
                 $resultCount = 1;
-            } else {
+            } elseif (is_array($operations)) {
                 $result = $executor->executeBatch($database, $operations);
+                $resultCount = count($result);
+            } elseif (is_string($statement)) {
+                $result = $executor->executeStatement($database, $statement, $accessMode);
+                $resultCount = 1;
+            } else {
+                $result = $executor->executeStatements($database, $statements, $accessMode);
                 $resultCount = count($result);
             }
             $responseBody = json_encode(['data' => $result], JSON_THROW_ON_ERROR);
@@ -149,14 +175,47 @@ class ViewerController
                 throw new \RuntimeException('Database response exceeds the permitted size.');
             }
             $duration = (hrtime(true) - $start) / 1_000_000;
-            Log::info('Database Viewer query succeeded', $metadata + ['result_count' => $resultCount, 'duration_ms' => $duration]);
+            Log::info('Database Viewer query succeeded', $metadata + [
+                'duration_ms' => $duration,
+                'outcome' => 'success',
+                'affected_rows' => $this->affectedRows($result, $type === 'transaction'),
+                'result_count' => $resultCount,
+            ]);
 
             return response($responseBody, 200, ['Content-Type' => 'application/json'])->header('Cache-Control', 'no-store');
+        } catch (DatabaseStatementException $exception) {
+            Log::warning('Database Viewer query failed', $metadata + [
+                'duration_ms' => (hrtime(true) - $start) / 1_000_000,
+                'outcome' => 'database_error',
+                'affected_rows' => 0,
+                'result_count' => 0,
+            ]);
+
+            return response()->json(['error' => $exception->diagnostic()], 422)->header('Cache-Control', 'no-store');
         } catch (Throwable) {
-            Log::warning('Database Viewer query failed', $metadata + ['result_count' => 0, 'duration_ms' => (hrtime(true) - $start) / 1_000_000]);
+            Log::warning('Database Viewer query failed', $metadata + [
+                'duration_ms' => (hrtime(true) - $start) / 1_000_000,
+                'outcome' => 'internal_error',
+                'affected_rows' => 0,
+                'result_count' => 0,
+            ]);
 
             return response()->json(['error' => 'Database query failed.'], 503)->header('Cache-Control', 'no-store');
         }
+    }
+
+    private function affectedRows(array $result, bool $batch): int
+    {
+        $results = $batch ? $result : [$result];
+        $affected = 0;
+        foreach ($results as $item) {
+            $value = is_array($item) ? ($item['stat']['rowsAffected'] ?? 0) : 0;
+            if (is_int($value) && $value > 0) {
+                $affected += $value;
+            }
+        }
+
+        return $affected;
     }
 
     private function hasExactKeys(array $payload, array $expected): bool

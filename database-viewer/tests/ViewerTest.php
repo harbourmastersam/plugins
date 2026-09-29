@@ -15,6 +15,8 @@ use App\Models\User;
 use Filament\Facades\Filament;
 use Filament\Tables\Table;
 use GreyHarbour\DatabaseViewer\Enums\AllowedQuery;
+use GreyHarbour\DatabaseViewer\Enums\SqlAccessMode;
+use GreyHarbour\DatabaseViewer\Exceptions\DatabaseStatementException;
 use GreyHarbour\DatabaseViewer\Providers\DatabaseViewerPluginProvider;
 use GreyHarbour\DatabaseViewer\Services\BrokerLimits;
 use GreyHarbour\DatabaseViewer\Services\DatabaseResultSerializer;
@@ -27,6 +29,8 @@ use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Foundation\Testing\TestCase;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use PDOException;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 class ViewerTest extends TestCase
@@ -240,18 +244,87 @@ class ViewerTest extends TestCase
         $this->actingAs($user)->postJson($this->url($server, $database, true), compact('channel') + ['statement' => 'SELECT 1'])->assertForbidden();
     }
 
-    public static function forbiddenSql(): array
+    public function test_owner_and_read_update_subuser_can_execute_full_sql(): void
     {
-        return array_map(fn ($s) => [$s], ['SELECT 2', 'SELECT 1; DROP TABLE x', 'SELECT 1 -- comment', 'SHOW TABLES', 'INSERT INTO x VALUES (1)', 'SELECT 01', 'SELECT 1;;', 'BEGIN']);
+        [$owner, $server, $database] = $this->fixture();
+        $executor = $this->mock(QueryExecutor::class);
+        $executor->shouldReceive('executeStatement')->once()->withArgs(fn ($model, $statement, $mode) => $model->id === $database->id
+            && $statement === 'DROP TABLE widgets' && $mode === SqlAccessMode::Full)->andReturn($this->emptyResult());
+        $ownerChannel = $this->open($owner, $server, $database);
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($ownerChannel, 'DROP TABLE widgets'))->assertOk();
+
+        $user = User::factory()->create();
+        Subuser::create([
+            'user_id' => $user->id,
+            'server_id' => $server->id,
+            'permissions' => [SubuserPermission::DatabaseRead->value, SubuserPermission::DatabaseUpdate->value],
+        ]);
+        $executor->shouldReceive('executeStatement')->once()->withArgs(fn ($model, $statement, $mode) => $model->id === $database->id
+            && $statement === 'INSERT INTO widgets VALUES (1)' && $mode === SqlAccessMode::Full)->andReturn($this->emptyResult());
+        $channel = $this->open($user, $server, $database);
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($channel, 'INSERT INTO widgets VALUES (1)'))->assertOk();
     }
 
-    #[DataProvider('forbiddenSql')]
-    public function test_arbitrary_sql_never_reaches_executor(string $statement): void
+    public function test_read_only_subuser_can_read_but_writes_are_denied_before_execution(): void
+    {
+        [, $server, $database] = $this->fixture();
+        $user = User::factory()->create();
+        Subuser::create(['user_id' => $user->id, 'server_id' => $server->id, 'permissions' => [SubuserPermission::DatabaseRead->value]]);
+        $channel = $this->open($user, $server, $database);
+        $executor = $this->mock(QueryExecutor::class);
+        $executor->shouldReceive('executeStatement')->once()->withArgs(fn ($model, $statement, $mode) => $model->id === $database->id
+            && $statement === 'SHOW TABLES' && $mode === SqlAccessMode::ReadOnly)->andReturn($this->emptyResult());
+
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($channel, 'SHOW TABLES'))->assertOk();
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($channel, 'DELETE FROM widgets'))
+            ->assertStatus(422)->assertExactJson(['error' => 'Query not permitted.']);
+    }
+
+    public function test_full_batches_accept_one_and_one_hundred_statements_in_order(): void
     {
         [$owner, $server, $database] = $this->fixture();
         $channel = $this->open($owner, $server, $database);
-        $this->mock(QueryExecutor::class)->shouldNotReceive('execute');
-        $this->postJson($this->url($server, $database, true), $this->queryPayload($channel, $statement))->assertStatus(422)->assertExactJson(['error' => 'Query not permitted.']);
+        $one = ['SELECT 2'];
+        $hundred = array_map(fn (int $index) => "SELECT $index", range(1, 100));
+        $executor = $this->mock(QueryExecutor::class);
+        $executor->shouldReceive('executeStatements')->once()->withArgs(fn ($model, $statements, $mode) => $model->id === $database->id
+            && $statements === $one && $mode === SqlAccessMode::Full)->andReturn([$this->emptyResult()]);
+        $executor->shouldReceive('executeStatements')->once()->withArgs(fn ($model, $statements, $mode) => $model->id === $database->id
+            && $statements === $hundred && $mode === SqlAccessMode::Full)->andReturn(array_fill(0, 100, $this->emptyResult()));
+
+        foreach ([$one, $hundred] as $statements) {
+            $this->postJson($this->url($server, $database, true), compact('channel', 'statements') + ['type' => 'transaction'])->assertOk();
+        }
+    }
+
+    public function test_general_statement_and_batch_limits_fail_before_execution(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        $executor = $this->mock(QueryExecutor::class);
+        $executor->shouldNotReceive('executeStatement');
+        $executor->shouldNotReceive('executeStatements');
+
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($channel, str_repeat('x', BrokerLimits::MAX_STATEMENT_BYTES + 1)))->assertStatus(422);
+        $this->postJson($this->url($server, $database, true), [
+            'type' => 'transaction', 'channel' => $channel, 'statements' => array_fill(0, BrokerLimits::MAX_BATCH_STATEMENTS + 1, 'SELECT 1'),
+        ])->assertStatus(422);
+    }
+
+    public function test_revoked_update_permission_is_read_only_on_the_next_query(): void
+    {
+        [, $server, $database] = $this->fixture();
+        $user = User::factory()->create();
+        $subuser = Subuser::create([
+            'user_id' => $user->id, 'server_id' => $server->id,
+            'permissions' => [SubuserPermission::DatabaseRead->value, SubuserPermission::DatabaseUpdate->value],
+        ]);
+        $channel = $this->open($user, $server, $database);
+        $subuser->update(['permissions' => [SubuserPermission::DatabaseRead->value]]);
+        $server->unsetRelation('subusers');
+        $this->mock(QueryExecutor::class)->shouldNotReceive('executeStatement');
+
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($channel, 'UPDATE widgets SET id = 2'))->assertStatus(422);
     }
 
     public function test_select_one_returns_studio_shape_and_safe_errors(): void
@@ -264,6 +337,64 @@ class ViewerTest extends TestCase
         $this->mock(QueryExecutor::class)->shouldReceive('execute')->andThrow(new \RuntimeException('NEVER-EXPOSE-THIS /internal/path'));
         config(['app.debug' => true]);
         $this->postJson($this->url($server, $database, true), $this->queryPayload($channel))->assertStatus(503)->assertExactJson(['error' => 'Database query failed.']);
+    }
+
+    public function test_safe_mariadb_diagnostic_is_returned_with_422(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        $pdoFailure = new PDOException('driver failure');
+        $pdoFailure->errorInfo = ['42000', 1064, 'You have an error in your SQL syntax'];
+        $failure = DatabaseStatementException::fromPdo($pdoFailure, 'BROKEN PRIVATE SQL');
+        $this->mock(QueryExecutor::class)->shouldReceive('executeStatement')->once()->andThrow($failure);
+
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($channel, 'BROKEN PRIVATE SQL'))
+            ->assertStatus(422)
+            ->assertExactJson(['error' => $failure->diagnostic()])
+            ->assertDontSee('BROKEN PRIVATE SQL');
+    }
+
+    public function test_failed_general_batch_returns_no_partial_results(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        $pdoFailure = new PDOException('failure');
+        $pdoFailure->errorInfo = ['23000', 1062, 'Duplicate entry'];
+        $failure = DatabaseStatementException::fromPdo($pdoFailure, 'INSERT PRIVATE');
+        $this->mock(QueryExecutor::class)->shouldReceive('executeStatements')->once()->andThrow($failure);
+
+        $this->postJson($this->url($server, $database, true), [
+            'type' => 'transaction', 'channel' => $channel, 'statements' => ['INSERT ONE', 'INSERT PRIVATE'],
+        ])->assertStatus(422)->assertExactJson(['error' => $failure->diagnostic()])->assertJsonMissing(['data']);
+    }
+
+    public function test_query_audit_log_contains_only_bounded_metadata(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        $sql = 'SELECT SUPER_PRIVATE_VALUE';
+        $result = $this->emptyResult();
+        $result['rows'] = [['value' => 'PRIVATE_ROW_VALUE']];
+        $this->mock(QueryExecutor::class)->shouldReceive('executeStatement')->once()->andReturn($result);
+        Log::spy();
+
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($channel, $sql))->assertOk();
+
+        Log::shouldHaveReceived('info')->once()->withArgs(function (string $message, array $metadata) use ($owner, $server, $database, $sql): bool {
+            $encoded = json_encode([$message, $metadata], JSON_THROW_ON_ERROR);
+
+            return $metadata['user_id'] === $owner->id
+                && $metadata['server_id'] === $server->id
+                && $metadata['database_id'] === $database->id
+                && $metadata['access_mode'] === SqlAccessMode::Full->value
+                && $metadata['request_kind'] === 'query'
+                && $metadata['statement_count'] === 1
+                && $metadata['outcome'] === 'success'
+                && $metadata['result_count'] === 1
+                && !str_contains($encoded, $sql)
+                && !str_contains($encoded, 'PRIVATE_ROW_VALUE')
+                && !str_contains($encoded, 'NEVER-EXPOSE-THIS');
+        });
     }
 
     public function test_ai_request_is_reauthorized_and_forwarded_without_exposing_the_broker_token(): void
@@ -382,7 +513,6 @@ class ViewerTest extends TestCase
     {
         [$owner, $server, $database] = $this->fixture();
         $channel = $this->open($owner, $server, $database);
-        $metadata = $this->schemaStatements($database->database)[0];
         $payloads = [
             ['channel' => $channel, 'statement' => 'SELECT 1'],
             ['type' => 'query', 'channel' => $channel, 'statement' => 'SELECT 1', 'statements' => []],
@@ -390,8 +520,7 @@ class ViewerTest extends TestCase
             ['type' => 'unknown', 'channel' => $channel, 'statement' => 'SELECT 1'],
             ['type' => 'query', 'channel' => $channel, 'statement' => 1],
             ['type' => 'transaction', 'channel' => $channel, 'statements' => 'not-an-array'],
-            $this->queryPayload($channel, $metadata),
-            ['type' => 'transaction', 'channel' => $channel, 'statements' => array_slice($this->schemaStatements($database->database), 0, 5)],
+            ['type' => 'transaction', 'channel' => $channel, 'statements' => []],
         ];
         $executor = $this->mock(QueryExecutor::class);
         $executor->shouldNotReceive('execute');
