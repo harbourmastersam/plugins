@@ -5,6 +5,9 @@ const byteLength = value => new TextEncoder().encode(value).byteLength;
 const AI_MAX_MESSAGES = 12;
 const AI_MAX_CONTENT_BYTES = 24 * 1024;
 const AI_MAX_RESPONSE_BYTES = 16 * 1024;
+const SQL_MAX_STATEMENT_BYTES = 64 * 1024;
+const SQL_MAX_BATCH_STATEMENTS = 100;
+const SQL_MAX_ERROR_BYTES = 2048;
 
 function denseArray(value, validate) {
     if (!Array.isArray(value) || Object.keys(value).length !== value.length) return false;
@@ -69,17 +72,24 @@ function copyAiResult(data) {
     return { response: data.response };
 }
 
+function copyBrokerError(envelope) {
+    if (!record(envelope) || !exactKeys(envelope, ['error']) || typeof envelope.error !== 'string') return null;
+    if (envelope.error.length < 1 || byteLength(envelope.error) > SQL_MAX_ERROR_BYTES || /[\u0000-\u001f\u007f]/.test(envelope.error)) return null;
+    return envelope.error;
+}
+
 function validRequest(message) {
     if (!record(message) || !Number.isSafeInteger(message.id) || !/^[a-f0-9]{32}$/.test(message.document)) return false;
     if (message.type === 'query') {
         return exactKeys(message, ['type', 'id', 'channel', 'document', 'statement'])
             && typeof message.statement === 'string'
-            && byteLength(message.statement) <= 2048;
+            && byteLength(message.statement) <= SQL_MAX_STATEMENT_BYTES;
     }
     if (message.type === 'transaction') {
         return exactKeys(message, ['type', 'id', 'channel', 'document', 'statements'])
-            && denseArray(message.statements, statement => typeof statement === 'string' && byteLength(statement) <= 2048)
-            && message.statements.length === 6;
+            && denseArray(message.statements, statement => typeof statement === 'string' && byteLength(statement) <= SQL_MAX_STATEMENT_BYTES)
+            && message.statements.length >= 1
+            && message.statements.length <= SQL_MAX_BATCH_STATEMENTS;
     }
     if (message.type === 'ai') {
         return exactKeys(message, ['type', 'id', 'channel', 'document', 'messages'])
@@ -117,7 +127,14 @@ export function createBridge({ iframe, origin, channel, broker }) {
                     : message.type === 'transaction'
                         ? { type: 'transaction', statements: [...message.statements], channel }
                         : { type: 'ai', messages: message.messages.map(item => ({ role: item.role, content: item.content })), channel };
-                const backendData = await broker(payload);
+                const envelope = await broker(payload);
+                const brokerError = copyBrokerError(envelope);
+                if (brokerError !== null) {
+                    reply({ error: brokerError });
+                    return;
+                }
+                if (!record(envelope) || !exactKeys(envelope, ['data'])) throw new Error('Invalid broker response');
+                const backendData = envelope.data;
                 if (message.type === 'query') {
                     const data = copyResult(backendData);
                     if (data === null) throw new Error('Invalid result');

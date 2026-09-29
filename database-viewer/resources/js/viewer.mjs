@@ -8,7 +8,7 @@ const bridge = createBridge({
     broker: async payload => {
         const abort = new AbortController();
         requests.add(abort);
-        const timeoutMs = payload.type === 'ai' ? 25000 : 8000;
+        const timeoutMs = payload.type === 'ai' ? 25000 : 35000;
         const timer = setTimeout(() => abort.abort(), timeoutMs);
         try {
             const endpoint = payload.type === 'ai' ? iframe.dataset.aiUrl : iframe.dataset.queryUrl;
@@ -17,8 +17,7 @@ const bridge = createBridge({
                 headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content },
                 body: JSON.stringify(payload),
             });
-            if (!response.ok) throw new Error('Broker request failed');
-            return (await response.json()).data;
+            return await response.json();
         } finally {
             clearTimeout(timer); requests.delete(abort);
         }

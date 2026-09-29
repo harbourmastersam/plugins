@@ -87,7 +87,7 @@ test('viewer sends AI envelopes only to the dedicated authenticated endpoint', a
         });
         await new Promise(resolve => originalSetTimeout(resolve, 0));
         assert.equal(calls[1][0], '/query');
-        assert.equal(delays[1], 8_000);
+        assert.equal(delays[1], 35_000);
     } finally {
         globalThis.setTimeout = originalSetTimeout;
         globalThis.clearTimeout = originalClearTimeout;
