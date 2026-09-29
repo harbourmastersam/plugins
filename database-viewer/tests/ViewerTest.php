@@ -506,7 +506,10 @@ class ViewerTest extends TestCase
                 && $config['password'] === 'NEVER-EXPOSE-THIS'
                 && $config['options'][\PDO::ATTR_TIMEOUT] === 3
                 && $config['options'][\PDO::MYSQL_ATTR_MULTI_STATEMENTS] === false
-                && $config['options'][\PDO::MYSQL_ATTR_INIT_COMMAND] === 'SET SESSION max_statement_time=3';
+                && $config['options'][\PDO::MYSQL_ATTR_INIT_COMMAND] === sprintf(
+                    'SET SESSION max_statement_time=%d',
+                    \Greyharbour\DatabaseViewer\Services\BrokerLimits::STATEMENT_TIMEOUT_SECONDS,
+                );
         }))->willReturn($pdo);
         $result = (new MariaDbExecutor($connector, new DatabaseResultSerializer))->execute($database, AllowedQuery::Diagnostic);
         $this->assertSame([['1' => '1']], $result['rows']);

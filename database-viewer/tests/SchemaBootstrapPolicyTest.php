@@ -122,18 +122,19 @@ class SchemaBootstrapPolicyTest extends TestCase
     public function test_statement_byte_limit_is_exact_and_uses_utf8_bytes(): void
     {
         $this->assertSame(6, BrokerLimits::SCHEMA_STATEMENT_COUNT);
-        $this->assertSame(2048, BrokerLimits::MAX_STATEMENT_BYTES);
-        $this->assertTrue(BrokerLimits::statementFits(str_repeat('a', 2048)));
-        $this->assertFalse(BrokerLimits::statementFits(str_repeat('a', 2049)));
-        $this->assertTrue(BrokerLimits::statementFits(str_repeat('é', 1024)));
-        $this->assertFalse(BrokerLimits::statementFits(str_repeat('é', 1025)));
+        $this->assertSame(65536, BrokerLimits::MAX_STATEMENT_BYTES);
+        $this->assertSame(100, BrokerLimits::MAX_BATCH_STATEMENTS);
+        $this->assertTrue(BrokerLimits::statementFits(str_repeat('a', 65536)));
+        $this->assertFalse(BrokerLimits::statementFits(str_repeat('a', 65537)));
+        $this->assertTrue(BrokerLimits::statementFits(str_repeat('é', 32768)));
+        $this->assertFalse(BrokerLimits::statementFits(str_repeat('é', 32769)));
     }
 
     public function test_all_resource_limits_are_centralized(): void
     {
-        $this->assertSame(16384, BrokerLimits::MAX_REQUEST_BYTES);
+        $this->assertSame(1048576, BrokerLimits::MAX_REQUEST_BYTES);
         $this->assertSame(5242880, BrokerLimits::MAX_RESPONSE_BYTES);
         $this->assertSame(3, BrokerLimits::CONNECTION_TIMEOUT_SECONDS);
-        $this->assertSame(3, BrokerLimits::STATEMENT_TIMEOUT_SECONDS);
+        $this->assertSame(30, BrokerLimits::STATEMENT_TIMEOUT_SECONDS);
     }
 }
