@@ -33,7 +33,7 @@ class DatabaseViewerPackageTest(unittest.TestCase):
         archive_path, digest = packager.package_plugin(REPO)
         repeated_path, repeated_digest = packager.package_plugin(REPO)
 
-        self.assertEqual("database-viewer-0.3.0.zip", archive_path.name)
+        self.assertEqual("database-viewer-0.4.0.zip", archive_path.name)
         self.assertEqual(64, len(digest))
         self.assertEqual(archive_path, repeated_path)
         self.assertEqual(digest, repeated_digest)
@@ -52,6 +52,27 @@ class DatabaseViewerPackageTest(unittest.TestCase):
         sidecar = archive_path.with_suffix(".zip.sha256")
         self.assertEqual(f"{digest}  {archive_path.name}\n", sidecar.read_text(encoding="utf-8"))
         self.assertEqual(digest, hashlib.sha256(archive_path.read_bytes()).hexdigest())
+
+        required_runtime = {
+            "database-viewer/src/Enums/SqlAccessMode.php",
+            "database-viewer/src/Exceptions/DatabaseStatementException.php",
+            "database-viewer/src/Services/GeneralSqlPolicy.php",
+        }
+        self.assertTrue(required_runtime.issubset(expected_paths))
+
+    def test_release_documentation_describes_full_and_read_only_sql(self):
+        readme = (REPO / "database-viewer" / "README.md").read_text(encoding="utf-8")
+        for expected in [
+            "Database Viewer 0.4.0",
+            "Full SQL access",
+            "Read-only SQL access",
+            "64 KiB",
+            "100 statements",
+            "non-atomic",
+            "MariaDB account",
+            "AI-generated SQL",
+        ]:
+            self.assertIn(expected, readme)
 
 
 if __name__ == "__main__":

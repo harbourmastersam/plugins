@@ -26,7 +26,7 @@ const bridge = createBridge({
 const listener = event => { void bridge.handle(event); };
 window.addEventListener('message', listener);
 iframe.addEventListener('load', () => {
-    status.textContent = 'Schema metadata access only. Table rows and writes are unavailable.';
+    status.textContent = 'Studio is connected through the Pelican database broker.';
 });
 window.addEventListener('pagehide', () => {
     bridge.dispose(); window.removeEventListener('message', listener);

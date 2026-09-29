@@ -20,7 +20,7 @@
         <a href="{{ $backUrl }}">Back to databases</a>
         <h1>Database Viewer — {{ $databaseName }}</h1>
         <p id="sql-access-mode">{{ $sqlAccessLabel }}</p>
-        <p>The explicit <code>mode=probe</code> URL remains available for a diagnostic <code>SELECT 1</code> connection test.</p>
+        <p>SQL is executed through Pelican using the access level above. Permissions are checked again for every request.</p>
         <p id="viewer-status" role="status">Loading Studio…</p>
     </header>
     <iframe id="database-viewer" title="Database Viewer Studio" sandbox="allow-scripts allow-same-origin"

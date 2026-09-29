@@ -31,7 +31,7 @@ test('viewer loads the controller-scoped Studio URL unchanged', async () => {
         assert.equal(new URL(iframe.src).searchParams.getAll('database').length, 1);
         assert.equal(new URL(iframe.src).searchParams.has('mode'), false);
         handlers['iframe:load']();
-        assert.equal(status.textContent, 'Schema metadata access only. Table rows and writes are unavailable.');
+        assert.equal(status.textContent, 'Studio is connected through the Pelican database broker.');
     } finally {
         delete globalThis.document;
         delete globalThis.window;
