@@ -10,6 +10,7 @@ use Illuminate\Database\Connectors\MySqlConnector;
 use PDO;
 use PDOException;
 use RuntimeException;
+use Throwable;
 
 class MariaDbExecutor implements QueryExecutor
 {
@@ -25,6 +26,7 @@ class MariaDbExecutor implements QueryExecutor
     public function __construct(
         private MySqlConnector $connector,
         private DatabaseResultSerializer $serializer,
+        private BrokerResponseGuard $responseGuard = new BrokerResponseGuard(),
     ) {}
 
     public function execute(Database $database, AllowedQuery $operation): array
@@ -83,12 +85,31 @@ class MariaDbExecutor implements QueryExecutor
         }
 
         $connection = $this->connect($database);
-        $results = [];
-        foreach ($statements as $statement) {
-            $results[] = $this->executeGeneralOnConnection($connection, $statement);
+        if (!$connection->beginTransaction()) {
+            throw new RuntimeException('Unable to start database transaction.');
         }
+        try {
+            $results = [];
+            foreach ($statements as $statement) {
+                $results[] = $this->executeGeneralOnConnection($connection, $statement);
+            }
+            $this->responseGuard->encodeData($results);
+            if (!$connection->commit()) {
+                throw new RuntimeException('Unable to commit database transaction.');
+            }
 
-        return $results;
+            return $results;
+        } catch (Throwable $exception) {
+            if ($connection->inTransaction()) {
+                try {
+                    $connection->rollBack();
+                } catch (Throwable) {
+                    // Preserve the statement/serialization/commit failure that triggered rollback.
+                }
+            }
+
+            throw $exception;
+        }
     }
 
     private function connect(Database $database): PDO

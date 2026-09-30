@@ -7,6 +7,7 @@ use GreyHarbour\DatabaseViewer\Enums\AllowedQuery;
 use GreyHarbour\DatabaseViewer\Enums\SqlAccessMode;
 use GreyHarbour\DatabaseViewer\Exceptions\DatabaseStatementException;
 use GreyHarbour\DatabaseViewer\Services\BrokerLimits;
+use GreyHarbour\DatabaseViewer\Services\BrokerResponseGuard;
 use GreyHarbour\DatabaseViewer\Services\DatabaseResultSerializer;
 use GreyHarbour\DatabaseViewer\Services\MariaDbExecutor;
 use Illuminate\Database\Connectors\MySqlConnector;
@@ -172,14 +173,10 @@ class MariaDbExecutorTest extends TestCase
         (new MariaDbExecutor($connector, new DatabaseResultSerializer()))->execute($this->database(), AllowedQuery::Diagnostic);
     }
 
-    public function test_full_statements_support_reads_writes_ddl_and_explicit_transaction_control_on_one_connection(): void
+    public function test_full_batch_commits_only_after_every_statement_and_complete_response_succeed(): void
     {
-        $sql = ['SELECT 1', 'INSERT INTO widgets VALUES (1)', 'UPDATE widgets SET id = 2', 'DELETE FROM widgets', 'CREATE TABLE example (id INT)', 'START TRANSACTION', 'ROLLBACK'];
+        $sql = ['INSERT INTO widgets VALUES (1)', 'UPDATE widgets SET id = 2', 'DELETE FROM widgets'];
         $prepared = [
-            $this->statement([['1' => 1]]),
-            $this->statement(),
-            $this->statement(),
-            $this->statement(),
             $this->statement(),
             $this->statement(),
             $this->statement(),
@@ -191,8 +188,8 @@ class MariaDbExecutorTest extends TestCase
 
             return $prepared[$index++];
         });
-        $pdo->expects($this->never())->method('beginTransaction');
-        $pdo->expects($this->never())->method('commit');
+        $pdo->expects($this->once())->method('beginTransaction')->willReturn(true);
+        $pdo->expects($this->once())->method('commit')->willReturn(true);
         $pdo->expects($this->never())->method('rollBack');
         $connector = $this->createMock(MySqlConnector::class);
         $connector->expects($this->once())->method('connect')->willReturn($pdo);
@@ -201,7 +198,45 @@ class MariaDbExecutorTest extends TestCase
             ->executeStatements($this->database(), $sql, SqlAccessMode::Full);
 
         $this->assertCount(count($sql), $results);
-        $this->assertSame([['1' => 1]], $results[0]['rows']);
+    }
+
+    public function test_combined_result_overflow_rolls_back_before_commit(): void
+    {
+        $payload = str_repeat('x', 3 * 1024 * 1024);
+        $pdo = $this->createMock(PDO::class);
+        $pdo->expects($this->once())->method('beginTransaction')->willReturn(true);
+        $pdo->expects($this->exactly(2))->method('prepare')->willReturnOnConsecutiveCalls(
+            $this->statement([['value' => $payload]]),
+            $this->statement([['value' => $payload]]),
+        );
+        $pdo->expects($this->never())->method('commit');
+        $pdo->expects($this->once())->method('inTransaction')->willReturn(true);
+        $pdo->expects($this->once())->method('rollBack')->willReturn(true);
+        $connector = $this->createStub(MySqlConnector::class);
+        $connector->method('connect')->willReturn($pdo);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Database response exceeds the permitted size.');
+        (new MariaDbExecutor($connector, new DatabaseResultSerializer(), new BrokerResponseGuard()))
+            ->executeStatements($this->database(), ['SELECT first', 'SELECT second'], SqlAccessMode::Full);
+    }
+
+    public function test_complete_response_encoding_failure_rolls_back_before_commit(): void
+    {
+        $pdo = $this->createMock(PDO::class);
+        $pdo->expects($this->once())->method('beginTransaction')->willReturn(true);
+        $pdo->expects($this->once())->method('prepare')->willReturn($this->statement());
+        $pdo->expects($this->never())->method('commit');
+        $pdo->expects($this->once())->method('inTransaction')->willReturn(true);
+        $pdo->expects($this->once())->method('rollBack')->willReturn(true);
+        $connector = $this->createStub(MySqlConnector::class);
+        $connector->method('connect')->willReturn($pdo);
+        $guard = $this->createMock(BrokerResponseGuard::class);
+        $guard->expects($this->once())->method('encodeData')->willThrowException(new \JsonException('encoding failed'));
+
+        $this->expectException(\JsonException::class);
+        (new MariaDbExecutor($connector, new DatabaseResultSerializer(), $guard))
+            ->executeStatements($this->database(), ['INSERT INTO widgets VALUES (1)'], SqlAccessMode::Full);
     }
 
     public function test_full_command_reports_affected_rows_and_insert_id(): void
@@ -279,7 +314,11 @@ class MariaDbExecutorTest extends TestCase
         $second = $this->createStub(PDOStatement::class);
         $second->method('execute')->willThrowException($failure);
         $pdo = $this->createMock(PDO::class);
+        $pdo->expects($this->once())->method('beginTransaction')->willReturn(true);
         $pdo->expects($this->exactly(2))->method('prepare')->willReturnOnConsecutiveCalls($first, $second);
+        $pdo->expects($this->never())->method('commit');
+        $pdo->expects($this->once())->method('inTransaction')->willReturn(true);
+        $pdo->expects($this->once())->method('rollBack')->willReturn(true);
         $connector = $this->createStub(MySqlConnector::class);
         $connector->method('connect')->willReturn($pdo);
 
@@ -287,6 +326,80 @@ class MariaDbExecutorTest extends TestCase
         (new MariaDbExecutor($connector, new DatabaseResultSerializer()))->executeStatements(
             $this->database(),
             ['INSERT INTO widgets VALUES (1)', 'BROKEN SQL', 'INSERT INTO widgets VALUES (2)'],
+            SqlAccessMode::Full,
+        );
+    }
+
+    public function test_final_statement_failure_rolls_back_every_preceding_statement(): void
+    {
+        $failure = new PDOException('constraint failure');
+        $failure->errorInfo = ['23000', 1062, 'Duplicate entry'];
+        $last = $this->createStub(PDOStatement::class);
+        $last->method('execute')->willThrowException($failure);
+        $pdo = $this->createMock(PDO::class);
+        $pdo->expects($this->once())->method('beginTransaction')->willReturn(true);
+        $pdo->expects($this->exactly(3))->method('prepare')->willReturnOnConsecutiveCalls(
+            $this->statement(),
+            $this->statement(),
+            $last,
+        );
+        $pdo->expects($this->never())->method('commit');
+        $pdo->expects($this->once())->method('inTransaction')->willReturn(true);
+        $pdo->expects($this->once())->method('rollBack')->willReturn(true);
+        $connector = $this->createStub(MySqlConnector::class);
+        $connector->method('connect')->willReturn($pdo);
+
+        $this->expectException(DatabaseStatementException::class);
+        (new MariaDbExecutor($connector, new DatabaseResultSerializer()))->executeStatements(
+            $this->database(),
+            ['INSERT INTO widgets VALUES (1)', 'UPDATE widgets SET id = 2', 'INSERT INTO widgets VALUES (2)'],
+            SqlAccessMode::Full,
+        );
+    }
+
+    public function test_commit_failure_attempts_rollback_and_preserves_commit_error(): void
+    {
+        $commitFailure = new RuntimeException('commit failed');
+        $pdo = $this->createMock(PDO::class);
+        $pdo->method('beginTransaction')->willReturn(true);
+        $pdo->method('prepare')->willReturn($this->statement());
+        $pdo->expects($this->once())->method('commit')->willThrowException($commitFailure);
+        $pdo->expects($this->once())->method('inTransaction')->willReturn(true);
+        $pdo->expects($this->once())->method('rollBack')->willReturn(true);
+        $connector = $this->createStub(MySqlConnector::class);
+        $connector->method('connect')->willReturn($pdo);
+
+        try {
+            (new MariaDbExecutor($connector, new DatabaseResultSerializer()))->executeStatements(
+                $this->database(),
+                ['INSERT INTO widgets VALUES (1)'],
+                SqlAccessMode::Full,
+            );
+            $this->fail('Commit failure returned a result.');
+        } catch (RuntimeException $exception) {
+            $this->assertSame($commitFailure, $exception);
+        }
+    }
+
+    public function test_rollback_failure_does_not_replace_original_statement_error(): void
+    {
+        $failure = new PDOException('statement failed');
+        $failure->errorInfo = ['42000', 1064, 'Syntax failure'];
+        $statement = $this->createStub(PDOStatement::class);
+        $statement->method('execute')->willThrowException($failure);
+        $pdo = $this->createMock(PDO::class);
+        $pdo->method('beginTransaction')->willReturn(true);
+        $pdo->method('prepare')->willReturn($statement);
+        $pdo->method('inTransaction')->willReturn(true);
+        $pdo->expects($this->once())->method('rollBack')->willThrowException(new RuntimeException('rollback failed'));
+        $connector = $this->createStub(MySqlConnector::class);
+        $connector->method('connect')->willReturn($pdo);
+
+        $this->expectException(DatabaseStatementException::class);
+        $this->expectExceptionMessage('Database statement failed.');
+        (new MariaDbExecutor($connector, new DatabaseResultSerializer()))->executeStatements(
+            $this->database(),
+            ['BROKEN SQL'],
             SqlAccessMode::Full,
         );
     }
