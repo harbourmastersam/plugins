@@ -153,6 +153,26 @@ class ViewerTest extends TestCase
         }
     }
 
+    public function test_viewer_renders_authoritative_lifecycle_configuration(): void
+    {
+        CarbonImmutable::setTestNow('2026-09-30 12:00:00 UTC');
+        try {
+            [$owner, $server, $database] = $this->fixture();
+            $this->actingAs($owner)->get($this->url($server, $database))
+                ->assertOk()
+                ->assertSee('id="viewer-countdown"', false)
+                ->assertSee('id="extend-viewer"', false)
+                ->assertSee('id="close-viewer"', false)
+                ->assertSee('data-expires-at="2026-09-30T12:15:00.000000Z"', false)
+                ->assertSee('data-max-expires-at="2026-09-30T14:00:00.000000Z"', false)
+                ->assertSee('data-server-now="2026-09-30T12:00:00.000000Z"', false)
+                ->assertSee($this->sessionUrl($server, $database, 'extend'), false)
+                ->assertSee($this->sessionUrl($server, $database, 'close'), false);
+        } finally {
+            CarbonImmutable::setTestNow();
+        }
+    }
+
     public function test_unrelated_user_and_subuser_without_database_read_are_denied(): void
     {
         [, $server, $database] = $this->fixture();
