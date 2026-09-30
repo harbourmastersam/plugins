@@ -1,4 +1,4 @@
-# Database Viewer 0.5.0
+# Database Viewer 0.5.1
 
 Database Viewer embeds GreyHarbour's hardened Outerbase Studio fork in Pelican Panel. Database credentials remain on the Panel server and never enter HTML, JavaScript, the iframe URL, or Studio.
 
@@ -23,6 +23,10 @@ Studio's fixed six-query schema bootstrap remains separate and available to both
 
 Opening the viewer creates a server-side session with a random channel whose SHA-256 hash is stored in Pelican. The initial lifetime is a 15-minute lease. The page computes its cosmetic countdown from authoritative server time, so browser clock skew does not grant or remove access.
 
+The parent page uses a compact toolbar above Studio for the database name, access mode, countdown, Extend, and Close controls. At two minutes remaining, a two-minute warning dialog offers an explicit extension or dismissal. A dismissed warning appears only once for that server-issued expiry; a successful extension starts a new warning period.
+
+When the authoritative countdown reaches zero, the parent immediately blocks Studio interaction, stops broker forwarding, aborts outstanding parent requests, and shows a **Session expired** overlay. Starting a new session reloads the authorized viewer route and creates a new channel rather than reviving the expired record. Visibility, window focus, and page-show events recalculate the same monotonic lifecycle clock, so returning to a suspended or background tab reveals warning or expiry state immediately.
+
 The **Extend 15 minutes** control sets expiry to 15 minutes from the current server time without stacking unused time. A viewer has a two-hour absolute maximum from creation. SQL and AI activity updates audit activity only and never extends authority.
 
 The **Close viewer** control revokes the session immediately and is idempotent. An owner may Close their own viewer even after tenant or database permission is removed. Expired or closed sessions cannot execute or extend. Each user may have at most 20 active viewers; the 21st is rejected without closing an existing viewer.
@@ -46,7 +50,7 @@ AI-generated SQL receives no special privilege. It runs only after the user subm
 - the matching GreyHarbour Studio build with database-scoped MySQL embeds
 - private network reachability from Panel to the selected MariaDB server
 
-Extract `database-viewer-0.5.0.zip` so the manifest is at `/var/www/pelican/plugins/database-viewer/plugin.json`, then run from the Panel directory:
+Extract `database-viewer-0.5.1.zip` so the manifest is at `/var/www/pelican/plugins/database-viewer/plugin.json`, then run from the Panel directory:
 
 ```sh
 php artisan p:plugin:install database-viewer
@@ -54,7 +58,7 @@ php artisan migrate --force
 php artisan optimize:clear
 ```
 
-The 0.5.0 migration creates the plugin-owned viewer-session table. Restart long-lived PHP-FPM, Octane, Horizon, and queue worker processes after installation. Existing 0.4.0 viewer tabs must be reloaded so they receive a new temporary session.
+The migration introduced in 0.5.0 creates the plugin-owned viewer-session table; 0.5.1 adds no schema change. Restart long-lived PHP-FPM, Octane, Horizon, and queue worker processes after installation. Existing viewer tabs must be reloaded so they receive the updated parent UI and JavaScript.
 
 Optional settings default to the GreyHarbour deployment:
 
@@ -103,10 +107,10 @@ python -m unittest tools.test_package_database_viewer
 python tools/package-database-viewer.py
 ```
 
-The deterministic packager uses a fixed runtime allowlist and timestamps. It creates `dist/database-viewer-0.5.0.zip` and a SHA-256 sidecar. Tests, plans, caches, local configuration, dependencies, and `database-viewer-ai-token.txt` are excluded.
+The deterministic packager uses a fixed runtime allowlist and timestamps. It creates `dist/database-viewer-0.5.1.zip` and a SHA-256 sidecar. Tests, plans, caches, local configuration, dependencies, and `database-viewer-ai-token.txt` are excluded.
 
 ## Manual check
 
-Import the archive into a disposable compatible Panel, run the migration, clear caches, and restart long-lived processes. Verify a Full user can perform an atomic multi-row edit and can run individual DDL. Confirm Studio's DDL transaction envelopes receive `TRANSACTION_NOT_ATOMIC`. Verify a Read-only user can query but cannot write. Test Extend, the two-hour cap, Close after permission removal, expiry, the 20-viewer limit, pruning, response limits, wrong channels, missing CSRF, and an invalid AI token.
+Import the archive into a disposable compatible Panel, run migrations, clear caches, and restart long-lived processes. Verify the compact toolbar leaves Studio filling the remaining viewport. Test the two-minute warning, dismissal, manual and dialog Extend, immediate expiry overlay, Start new session, background-tab resume, and Close. Verify a Full user can perform an atomic multi-row edit and individual DDL, while a Read-only user cannot write. Also test the two-hour cap, permission removal, the 20-viewer limit, pruning, response limits, wrong channels, missing CSRF, and an invalid AI token.
 
 Automated tests use connector/PDO doubles and SQLite for the Panel database. They do not prove production network reachability, live MariaDB transaction behavior, storage-engine configuration, or the selected database user's grants. See [verification.md](verification.md) for recorded evidence and [source-inspection.md](source-inspection.md) for integration points.

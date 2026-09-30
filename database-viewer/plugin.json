@@ -2,7 +2,7 @@
     "id": "database-viewer",
     "name": "Database Viewer",
     "author": "GreyHarbour",
-    "version": "0.5.0",
+    "version": "0.5.1",
     "description": "Secure embedded Studio with permission-aware MariaDB SQL and server-mediated Workers AI.",
     "category": "plugin",
     "url": "https://github.com/harbourmastersam/plugins",
