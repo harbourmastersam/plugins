@@ -16,6 +16,7 @@ use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Foundation\Testing\TestCase;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ViewerSessionManagerTest extends TestCase
 {
@@ -231,5 +232,90 @@ class ViewerSessionManagerTest extends TestCase
         $this->assertEquals($firstRevokedAt, ViewerSession::query()->where('channel_hash', hash('sha256', $first->channel))->value('revoked_at'));
         $this->assertNull(ViewerSession::query()->where('channel_hash', hash('sha256', $second->channel))->value('revoked_at'));
         $this->assertNotNull($manager->validate($second->channel, $user->id, $server->id, $database->id));
+    }
+
+    public function test_pruning_respects_retention_boundary_and_batch_limit(): void
+    {
+        CarbonImmutable::setTestNow('2026-10-01 12:00:00 UTC');
+        [$user, $server, $database] = $this->fixture();
+        $make = function (string $label, string $expiresAt, ?string $revokedAt = null) use ($user, $server, $database): void {
+            ViewerSession::query()->create([
+                'user_id' => $user->id, 'server_id' => $server->id, 'database_id' => $database->id,
+                'channel_hash' => hash('sha256', $label), 'created_at' => '2026-09-28 12:00:00',
+                'expires_at' => $expiresAt, 'last_activity_at' => '2026-09-28 12:00:00', 'revoked_at' => $revokedAt,
+            ]);
+        };
+        $make('active', '2026-10-01 13:00:00');
+        $make('recent-expiry', '2026-09-30 12:00:01');
+        $make('old-expiry', '2026-09-30 12:00:00');
+        $make('recent-revocation', '2026-10-02 12:00:00', '2026-09-30 12:00:01');
+        $make('old-revocation', '2026-10-02 12:00:00', '2026-09-30 12:00:00');
+
+        $manager = app(ViewerSessionManager::class);
+        $this->assertSame(1, $manager->pruneBatch(1));
+        $this->assertSame(1, $manager->pruneBatch(1));
+        $this->assertSame(0, $manager->pruneBatch(1));
+        $remaining = ViewerSession::query()->pluck('channel_hash')->all();
+        $this->assertContains(hash('sha256', 'active'), $remaining);
+        $this->assertContains(hash('sha256', 'recent-expiry'), $remaining);
+        $this->assertContains(hash('sha256', 'recent-revocation'), $remaining);
+        $this->assertNotContains(hash('sha256', 'old-expiry'), $remaining);
+        $this->assertNotContains(hash('sha256', 'old-revocation'), $remaining);
+    }
+
+    public function test_creation_attempts_one_best_effort_prune_outside_its_transaction(): void
+    {
+        [$user, $server, $database] = $this->fixture();
+        $manager = new class extends ViewerSessionManager {
+            public array $transactionLevels = [];
+            public bool $failPrune = false;
+            public function pruneBatch(int $limit = 500): int
+            {
+                $this->transactionLevels[] = DB::transactionLevel();
+                if ($this->failPrune) throw new \RuntimeException('cleanup failed');
+                return 0;
+            }
+        };
+
+        $manager->create($user, $server, $database);
+        $this->assertSame([0], $manager->transactionLevels);
+
+        Log::spy();
+        $manager->failPrune = true;
+        $manager->create($user, $server, $database);
+        $this->assertSame([0, 0], $manager->transactionLevels);
+        $this->assertCount(2, ViewerSession::all());
+        Log::shouldHaveReceived('warning')->once();
+    }
+
+    public function test_limit_rejection_still_prunes_before_the_user_lock_transaction(): void
+    {
+        CarbonImmutable::setTestNow('2026-10-01 12:00:00 UTC');
+        [$user, $server, $database] = $this->fixture();
+        foreach (range(1, 20) as $index) {
+            ViewerSession::query()->create([
+                'user_id' => $user->id, 'server_id' => $server->id, 'database_id' => $database->id,
+                'channel_hash' => hash('sha256', "active-{$index}"), 'created_at' => CarbonImmutable::now(),
+                'expires_at' => CarbonImmutable::now()->addHour(), 'last_activity_at' => CarbonImmutable::now(),
+                'revoked_at' => null,
+            ]);
+        }
+        $manager = new class extends ViewerSessionManager {
+            public array $transactionLevels = [];
+            public function pruneBatch(int $limit = 500): int
+            {
+                $this->transactionLevels[] = DB::transactionLevel();
+                return 0;
+            }
+        };
+
+        try {
+            $manager->create($user, $server, $database);
+            $this->fail('Twenty-first viewer was created.');
+        } catch (ViewerSessionException $exception) {
+            $this->assertSame('VIEWER_LIMIT_REACHED', $exception->applicationCode());
+        }
+        $this->assertSame([0], $manager->transactionLevels);
+        $this->assertSame(20, ViewerSession::query()->count());
     }
 }

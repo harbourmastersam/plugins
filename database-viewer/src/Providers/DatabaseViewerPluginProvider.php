@@ -10,6 +10,7 @@ use Filament\Tables\Table;
 use GreyHarbour\DatabaseViewer\Services\DatabaseResultSerializer;
 use GreyHarbour\DatabaseViewer\Services\MariaDbExecutor;
 use GreyHarbour\DatabaseViewer\Services\QueryExecutor;
+use GreyHarbour\DatabaseViewer\Console\Commands\PruneViewerSessionsCommand;
 use Illuminate\Support\ServiceProvider;
 
 class DatabaseViewerPluginProvider extends ServiceProvider
@@ -25,6 +26,9 @@ class DatabaseViewerPluginProvider extends ServiceProvider
     {
         $this->loadViewsFrom(__DIR__.'/../../resources/views', 'database-viewer');
         $this->loadRoutesFrom(__DIR__.'/../../routes/web.php');
+        if ($this->app->runningInConsole()) {
+            $this->commands([PruneViewerSessionsCommand::class]);
+        }
 
         DatabaseResource::modifyTable(fn (Table $table): Table => $table->pushRecordActions([
             Action::make('databaseViewer')

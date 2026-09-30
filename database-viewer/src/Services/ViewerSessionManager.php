@@ -10,6 +10,8 @@ use GreyHarbour\DatabaseViewer\Exceptions\ViewerSessionException;
 use GreyHarbour\DatabaseViewer\Models\ViewerSession;
 use GreyHarbour\DatabaseViewer\ValueObjects\ViewerSessionHandle;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class ViewerSessionManager
 {
@@ -21,6 +23,11 @@ class ViewerSessionManager
 
     public function create(User $user, Server $server, Database $database): ViewerSessionHandle
     {
+        try {
+            $this->pruneBatch();
+        } catch (Throwable) {
+            Log::warning('Database Viewer historical session pruning failed.');
+        }
         $now = CarbonImmutable::now();
 
         return DB::transaction(function () use ($user, $server, $database, $now): ViewerSessionHandle {
@@ -93,6 +100,37 @@ class ViewerSessionManager
 
             return $session;
         });
+    }
+
+    public function pruneBatch(int $limit = 500): int
+    {
+        if ($limit < 1) {
+            return 0;
+        }
+        $cutoff = CarbonImmutable::now()->subDay();
+        $ids = ViewerSession::query()
+            ->where('expires_at', '<=', $cutoff)
+            ->orderBy('expires_at')
+            ->orderBy('id')
+            ->limit($limit)
+            ->pluck('id')
+            ->all();
+
+        $remaining = $limit - count($ids);
+        if ($remaining > 0) {
+            $revoked = ViewerSession::query()
+                ->whereNotNull('revoked_at')
+                ->where('revoked_at', '<=', $cutoff)
+                ->when($ids !== [], fn ($query) => $query->whereNotIn('id', $ids))
+                ->orderBy('revoked_at')
+                ->orderBy('id')
+                ->limit($remaining)
+                ->pluck('id')
+                ->all();
+            $ids = array_merge($ids, $revoked);
+        }
+
+        return $ids === [] ? 0 : ViewerSession::query()->whereKey($ids)->delete();
     }
 
     private function find(string $channel, int $userId, int $serverId, int $databaseId): ViewerSession
