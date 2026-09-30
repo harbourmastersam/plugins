@@ -6,22 +6,25 @@ use App\Filament\Server\Resources\Databases\DatabaseResource;
 use GreyHarbour\DatabaseViewer\Enums\AllowedQuery;
 use GreyHarbour\DatabaseViewer\Enums\SqlAccessMode;
 use GreyHarbour\DatabaseViewer\Exceptions\DatabaseStatementException;
+use GreyHarbour\DatabaseViewer\Exceptions\ViewerSessionException;
 use GreyHarbour\DatabaseViewer\Services\AiBroker;
 use GreyHarbour\DatabaseViewer\Services\AiLimits;
 use GreyHarbour\DatabaseViewer\Services\BrokerLimits;
+use GreyHarbour\DatabaseViewer\Services\BrokerResponseGuard;
 use GreyHarbour\DatabaseViewer\Services\GeneralSqlPolicy;
+use GreyHarbour\DatabaseViewer\Services\ManagedTransactionPolicy;
 use GreyHarbour\DatabaseViewer\Services\QueryExecutor;
 use GreyHarbour\DatabaseViewer\Services\SchemaBootstrapPolicy;
 use GreyHarbour\DatabaseViewer\Services\StudioOrigin;
 use GreyHarbour\DatabaseViewer\Services\ViewerAccess;
-use GreyHarbour\DatabaseViewer\Services\ViewerContext;
+use GreyHarbour\DatabaseViewer\Services\ViewerSessionManager;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class ViewerController
 {
-    public function __construct(private ViewerAccess $access, private ViewerContext $contexts) {}
+    public function __construct(private ViewerAccess $access, private ViewerSessionManager $sessions) {}
 
     public function show(Request $request, string $server, string $database)
     {
@@ -31,7 +34,12 @@ class ViewerController
         } catch (\InvalidArgumentException) {
             abort(503, 'Database Viewer configuration is invalid.');
         }
-        $channel = $this->contexts->create($request->session(), $request->user()->id, $server->id, $database->id);
+        try {
+            $session = $this->sessions->create($request->user(), $server, $database);
+        } catch (ViewerSessionException $exception) {
+            abort($exception->httpStatus(), $exception->getMessage());
+        }
+        $channel = $session->channel;
 
         return response()->view('database-viewer::viewer', [
             'channel' => $channel,
@@ -47,6 +55,9 @@ class ViewerController
             'backUrl' => DatabaseResource::getUrl('index', panel: 'server', tenant: $server),
             'databaseName' => $database->database,
             'sqlAccessLabel' => $accessMode->value === 'full' ? 'Full SQL access' : 'Read-only SQL access',
+            'expiresAt' => $session->expiresAt->toISOString(),
+            'maxExpiresAt' => $session->maxExpiresAt->toISOString(),
+            'serverNow' => $session->serverNow->toISOString(),
         ])->header('Cache-Control', 'no-store, private')->header('Referrer-Policy', 'no-referrer');
     }
 
@@ -70,8 +81,14 @@ class ViewerController
         }
 
         $channel = $payload['channel'] ?? null;
-        abort_unless(is_string($channel) && preg_match('/\A[A-Za-z0-9_-]{43}\z/D', $channel)
-            && $this->contexts->matches($request->session(), $channel, $request->user()->id, $server->id, $database->id), 403);
+        if (!is_string($channel) || !preg_match('/\A[A-Za-z0-9_-]{43}\z/D', $channel)) {
+            abort(403);
+        }
+        try {
+            $this->sessions->validate($channel, $request->user()->id, $server->id, $database->id);
+        } catch (ViewerSessionException $exception) {
+            return $this->sessionError($exception);
+        }
 
         $messages = $payload['messages'] ?? null;
         if (!$this->validAiMessages($messages)) {
@@ -99,6 +116,8 @@ class ViewerController
         QueryExecutor $executor,
         SchemaBootstrapPolicy $schemaPolicy,
         GeneralSqlPolicy $sqlPolicy,
+        ManagedTransactionPolicy $transactionPolicy,
+        BrokerResponseGuard $responseGuard,
     ) {
         [$server, $database, $accessMode] = $this->access->resolve($request->user(), $server, $database);
         $rawBody = $request->getContent();
@@ -116,8 +135,14 @@ class ViewerController
         }
 
         $channel = $payload['channel'] ?? null;
-        abort_unless(is_string($channel) && preg_match('/\A[A-Za-z0-9_-]{43}\z/D', $channel)
-            && $this->contexts->matches($request->session(), $channel, $request->user()->id, $server->id, $database->id), 403);
+        if (!is_string($channel) || !preg_match('/\A[A-Za-z0-9_-]{43}\z/D', $channel)) {
+            abort(403);
+        }
+        try {
+            $this->sessions->validate($channel, $request->user()->id, $server->id, $database->id);
+        } catch (ViewerSessionException $exception) {
+            return $this->sessionError($exception);
+        }
 
         $type = $payload['type'] ?? null;
         $operation = null;
@@ -138,6 +163,9 @@ class ViewerController
             if (is_array($candidates)) {
                 $operations = $schemaPolicy->classifyTransaction($database, $candidates);
                 if ($operations === null && $accessMode === SqlAccessMode::Full && $sqlPolicy->validBatch($candidates)) {
+                    if (!$transactionPolicy->allowsBatch($candidates)) {
+                        return $this->nonAtomicTransactionError();
+                    }
                     $statements = $candidates;
                 }
             }
@@ -170,10 +198,7 @@ class ViewerController
                 $result = $executor->executeStatements($database, $statements, $accessMode);
                 $resultCount = count($result);
             }
-            $responseBody = json_encode(['data' => $result], JSON_THROW_ON_ERROR);
-            if (strlen($responseBody) > BrokerLimits::MAX_RESPONSE_BYTES) {
-                throw new \RuntimeException('Database response exceeds the permitted size.');
-            }
+            $responseBody = $responseGuard->encodeData($result);
             $duration = (hrtime(true) - $start) / 1_000_000;
             Log::info('Database Viewer query succeeded', $metadata + [
                 'duration_ms' => $duration,
@@ -235,6 +260,24 @@ class ViewerController
     private function aiPolicyError()
     {
         return response()->json(['error' => 'AI request not permitted.'], 422)->header('Cache-Control', 'no-store');
+    }
+
+    private function sessionError(ViewerSessionException $exception)
+    {
+        $body = ['error' => $exception->getMessage()];
+        if ($exception->applicationCode() !== null) {
+            $body['code'] = $exception->applicationCode();
+        }
+
+        return response()->json($body, $exception->httpStatus())->header('Cache-Control', 'no-store');
+    }
+
+    private function nonAtomicTransactionError()
+    {
+        return response()->json([
+            'error' => 'This operation cannot be executed atomically.',
+            'code' => 'TRANSACTION_NOT_ATOMIC',
+        ], 422)->header('Cache-Control', 'no-store');
     }
 
     private function validAiMessages(mixed $messages): bool

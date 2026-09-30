@@ -12,17 +12,18 @@ use App\Models\Role;
 use App\Models\Server;
 use App\Models\Subuser;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Filament\Tables\Table;
 use GreyHarbour\DatabaseViewer\Enums\AllowedQuery;
 use GreyHarbour\DatabaseViewer\Enums\SqlAccessMode;
 use GreyHarbour\DatabaseViewer\Exceptions\DatabaseStatementException;
+use GreyHarbour\DatabaseViewer\Models\ViewerSession;
 use GreyHarbour\DatabaseViewer\Providers\DatabaseViewerPluginProvider;
 use GreyHarbour\DatabaseViewer\Services\BrokerLimits;
 use GreyHarbour\DatabaseViewer\Services\DatabaseResultSerializer;
 use GreyHarbour\DatabaseViewer\Services\MariaDbExecutor;
 use GreyHarbour\DatabaseViewer\Services\QueryExecutor;
-use GreyHarbour\DatabaseViewer\Services\ViewerContext;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Database\Connectors\MySqlConnector;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
@@ -309,6 +310,57 @@ class ViewerTest extends TestCase
         $this->postJson($this->url($server, $database, true), [
             'type' => 'transaction', 'channel' => $channel, 'statements' => array_fill(0, BrokerLimits::MAX_BATCH_STATEMENTS + 1, 'SELECT 1'),
         ])->assertStatus(422);
+    }
+
+    public function test_non_atomic_transaction_is_rejected_without_closing_viewer(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        $executor = $this->mock(QueryExecutor::class);
+        $executor->shouldNotReceive('executeStatements');
+        $executor->shouldReceive('executeStatement')->once()->withArgs(fn ($model, $statement, $mode) => $model->id === $database->id
+            && $statement === 'SELECT 2' && $mode === SqlAccessMode::Full)->andReturn($this->emptyResult());
+
+        $this->postJson($this->url($server, $database, true), [
+            'type' => 'transaction', 'channel' => $channel, 'statements' => ['CREATE TABLE audit (id INT)'],
+        ])->assertStatus(422)->assertExactJson([
+            'error' => 'This operation cannot be executed atomically.',
+            'code' => 'TRANSACTION_NOT_ATOMIC',
+        ]);
+
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($channel, 'SELECT 2'))->assertOk();
+    }
+
+    public function test_expired_or_closed_session_stops_sql_before_execution(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $executor = $this->mock(QueryExecutor::class);
+        $executor->shouldNotReceive('execute');
+        $executor->shouldNotReceive('executeStatement');
+
+        $expired = $this->open($owner, $server, $database);
+        ViewerSession::query()->where('channel_hash', hash('sha256', $expired))->update(['expires_at' => CarbonImmutable::now()]);
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($expired))
+            ->assertStatus(410)->assertExactJson(['error' => 'Database Viewer session expired.', 'code' => 'SESSION_EXPIRED']);
+
+        $closed = $this->open($owner, $server, $database);
+        ViewerSession::query()->where('channel_hash', hash('sha256', $closed))->update(['revoked_at' => CarbonImmutable::now()]);
+        $this->postJson($this->url($server, $database, true), $this->queryPayload($closed))
+            ->assertStatus(410)->assertExactJson(['error' => 'Database Viewer session closed.', 'code' => 'SESSION_CLOSED']);
+    }
+
+    public function test_expired_session_stops_ai_before_broker_call(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        ViewerSession::query()->where('channel_hash', hash('sha256', $channel))->update(['expires_at' => CarbonImmutable::now()]);
+        Http::fake();
+
+        $this->postJson($this->aiUrl($server, $database), [
+            'type' => 'ai', 'channel' => $channel,
+            'messages' => [['role' => 'user', 'content' => 'Count widgets']],
+        ])->assertStatus(410)->assertExactJson(['error' => 'Database Viewer session expired.', 'code' => 'SESSION_EXPIRED']);
+        Http::assertNothingSent();
     }
 
     public function test_revoked_update_permission_is_read_only_on_the_next_query(): void
@@ -605,17 +657,14 @@ class ViewerTest extends TestCase
         $this->postJson($this->url($server, $database, true), compact('channel') + ['statement' => 'SELECT 1'])->assertForbidden();
     }
 
-    public function test_context_storage_is_bounded_and_oldest_viewer_fails_closed(): void
+    public function test_opening_viewer_uses_persistent_hashed_session_not_laravel_context(): void
     {
-        $contexts = new ViewerContext();
-        $session = $this->app['session.store'];
-        $old = $contexts->create($session, 1, 2, 3);
-        for ($i = 0; $i < 20; $i++) {
-            $latest = $contexts->create($session, 1, 2, 3);
-        }
-        $this->assertFalse($contexts->matches($session, $old, 1, 2, 3));
-        $this->assertTrue($contexts->matches($session, $latest, 1, 2, 3));
-        $this->assertCount(20, $session->get('database-viewer.contexts'));
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        $viewer = ViewerSession::query()->sole();
+
+        $this->assertSame(hash('sha256', $channel), $viewer->channel_hash);
+        $this->assertFalse($this->app['session.store']->has('database-viewer.contexts'));
     }
 
     public function test_executor_uses_selected_credentials_and_fixed_sql(): void
