@@ -51,6 +51,7 @@ class ViewerTest extends TestCase
         $app = require getenv('PELICAN_PATH').'/bootstrap/app.php';
         $app->make(Kernel::class)->bootstrap();
         $app->register(DatabaseViewerPluginProvider::class);
+        $app->make('migrator')->path(dirname(__DIR__).'/database/migrations');
         $app['router']->getRoutes()->refreshNameLookups();
         $app['router']->getRoutes()->refreshActionLookups();
 
