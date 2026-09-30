@@ -93,6 +93,11 @@ class ViewerTest extends TestCase
         return '/database-viewer/servers/'.$server->uuid_short.'/databases/'.$database->id.'/ai';
     }
 
+    private function sessionUrl(Server $server, Database $database, string $action): string
+    {
+        return '/database-viewer/servers/'.$server->uuid_short.'/databases/'.$database->id.'/session/'.$action;
+    }
+
     private function emptyResult(float $duration = 0): array
     {
         return ['headers' => [], 'rows' => [], 'stat' => ['rowsAffected' => 0, 'rowsRead' => 0, 'rowsWritten' => null, 'queryDurationMs' => $duration]];
@@ -229,7 +234,7 @@ class ViewerTest extends TestCase
         $user = User::factory()->create();
         $subuser = Subuser::create(['user_id' => $user->id, 'server_id' => $server->id, 'permissions' => [SubuserPermission::DatabaseRead->value]]);
         $channel = $this->open($user, $server, $database);
-        $subuser->update(['permissions' => []]);
+        $subuser->delete();
         $this->postJson($this->url($server, $database, true), compact('channel') + ['statement' => 'SELECT 1'])->assertForbidden();
     }
 
@@ -665,6 +670,100 @@ class ViewerTest extends TestCase
 
         $this->assertSame(hash('sha256', $channel), $viewer->channel_hash);
         $this->assertFalse($this->app['session.store']->has('database-viewer.contexts'));
+    }
+
+    public function test_extend_uses_authoritative_time_without_stacking_unused_time(): void
+    {
+        CarbonImmutable::setTestNow('2026-09-30 12:00:00 UTC');
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+
+        CarbonImmutable::setTestNow('2026-09-30 12:05:00 UTC');
+        $this->postJson($this->sessionUrl($server, $database, 'extend'), compact('channel'))
+            ->assertOk()->assertExactJson(['data' => [
+                'expiresAt' => '2026-09-30T12:20:00.000000Z',
+                'maxExpiresAt' => '2026-09-30T14:00:00.000000Z',
+                'serverNow' => '2026-09-30T12:05:00.000000Z',
+            ]]);
+        $this->assertSame('2026-09-30T12:20:00.000000Z', ViewerSession::query()->sole()->expires_at->toISOString());
+    }
+
+    public function test_extend_reauthorizes_current_database_access_and_validates_exact_payload(): void
+    {
+        [, $server, $database] = $this->fixture();
+        $user = User::factory()->create();
+        $subuser = Subuser::create([
+            'user_id' => $user->id, 'server_id' => $server->id,
+            'permissions' => [SubuserPermission::DatabaseRead->value],
+        ]);
+        $channel = $this->open($user, $server, $database);
+
+        $this->postJson($this->sessionUrl($server, $database, 'extend'), compact('channel') + ['extra' => true])
+            ->assertStatus(422);
+        $subuser->update(['permissions' => []]);
+        $this->postJson($this->sessionUrl($server, $database, 'extend'), compact('channel'))
+            ->assertForbidden();
+    }
+
+    public function test_close_is_idempotent_after_permission_loss_and_isolates_other_viewers(): void
+    {
+        [, $server, $database] = $this->fixture();
+        $user = User::factory()->create();
+        $subuser = Subuser::create([
+            'user_id' => $user->id, 'server_id' => $server->id,
+            'permissions' => [SubuserPermission::DatabaseRead->value],
+        ]);
+        $channel = $this->open($user, $server, $database);
+        $otherChannel = $this->open($user, $server, $database);
+        $subuser->delete();
+
+        foreach ([1, 2] as $_) {
+            $this->postJson($this->sessionUrl($server, $database, 'close'), compact('channel'))
+                ->assertOk()->assertExactJson(['data' => ['closed' => true]]);
+        }
+
+        $this->assertNotNull(ViewerSession::query()->where('channel_hash', hash('sha256', $channel))->sole()->revoked_at);
+        $this->assertNull(ViewerSession::query()->where('channel_hash', hash('sha256', $otherChannel))->sole()->revoked_at);
+    }
+
+    public function test_extend_returns_terminal_expired_and_closed_codes(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $expired = $this->open($owner, $server, $database);
+        ViewerSession::query()->where('channel_hash', hash('sha256', $expired))
+            ->update(['expires_at' => CarbonImmutable::now()]);
+        $this->postJson($this->sessionUrl($server, $database, 'extend'), ['channel' => $expired])
+            ->assertStatus(410)->assertExactJson([
+                'error' => 'Database Viewer session expired.',
+                'code' => 'SESSION_EXPIRED',
+            ]);
+
+        $closed = $this->open($owner, $server, $database);
+        $this->postJson($this->sessionUrl($server, $database, 'close'), ['channel' => $closed])->assertOk();
+        $this->postJson($this->sessionUrl($server, $database, 'extend'), ['channel' => $closed])
+            ->assertStatus(410)->assertExactJson([
+                'error' => 'Database Viewer session closed.',
+                'code' => 'SESSION_CLOSED',
+            ]);
+    }
+
+    public function test_close_rejects_wrong_identity_context_and_non_exact_payload(): void
+    {
+        [$owner, $server, $database] = $this->fixture();
+        $channel = $this->open($owner, $server, $database);
+        $otherDatabase = Database::factory()->create([
+            'server_id' => $server->id,
+            'database_host_id' => $database->database_host_id,
+        ]);
+
+        $this->postJson($this->sessionUrl($server, $database, 'close'), compact('channel') + ['extra' => true])
+            ->assertStatus(422);
+        $this->postJson($this->sessionUrl($server, $otherDatabase, 'close'), compact('channel'))
+            ->assertForbidden();
+        $otherUser = User::factory()->create();
+        $this->actingAs($otherUser)->postJson($this->sessionUrl($server, $database, 'close'), compact('channel'))
+            ->assertForbidden();
+        $this->assertNull(ViewerSession::query()->sole()->revoked_at);
     }
 
     public function test_executor_uses_selected_credentials_and_fixed_sql(): void

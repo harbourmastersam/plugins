@@ -14,4 +14,8 @@ Route::middleware(['web', 'auth', 'auth.session', RequireTwoFactorAuthentication
             ->whereNumber('database')->middleware('throttle:30,1')->name('query');
         Route::post('/servers/{server}/databases/{database}/ai', [ViewerController::class, 'ai'])
             ->whereNumber('database')->middleware('throttle:10,1')->name('ai');
+        Route::post('/servers/{server}/databases/{database}/session/extend', [ViewerController::class, 'extendSession'])
+            ->whereNumber('database')->middleware('throttle:30,1')->name('session.extend');
+        Route::post('/servers/{server}/databases/{database}/session/close', [ViewerController::class, 'closeSession'])
+            ->whereNumber('database')->middleware('throttle:30,1')->name('session.close');
     });

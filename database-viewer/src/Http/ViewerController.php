@@ -3,6 +3,7 @@
 namespace GreyHarbour\DatabaseViewer\Http;
 
 use App\Filament\Server\Resources\Databases\DatabaseResource;
+use App\Models\Server;
 use GreyHarbour\DatabaseViewer\Enums\AllowedQuery;
 use GreyHarbour\DatabaseViewer\Enums\SqlAccessMode;
 use GreyHarbour\DatabaseViewer\Exceptions\DatabaseStatementException;
@@ -52,6 +53,8 @@ class ViewerController
             ),
             'queryUrl' => route('database-viewer.query', ['server' => $server->uuid_short, 'database' => $database->id]),
             'aiUrl' => route('database-viewer.ai', ['server' => $server->uuid_short, 'database' => $database->id]),
+            'extendUrl' => route('database-viewer.session.extend', ['server' => $server->uuid_short, 'database' => $database->id]),
+            'closeUrl' => route('database-viewer.session.close', ['server' => $server->uuid_short, 'database' => $database->id]),
             'backUrl' => DatabaseResource::getUrl('index', panel: 'server', tenant: $server),
             'databaseName' => $database->database,
             'sqlAccessLabel' => $accessMode->value === 'full' ? 'Full SQL access' : 'Read-only SQL access',
@@ -59,6 +62,43 @@ class ViewerController
             'maxExpiresAt' => $session->maxExpiresAt->toISOString(),
             'serverNow' => $session->serverNow->toISOString(),
         ])->header('Cache-Control', 'no-store, private')->header('Referrer-Policy', 'no-referrer');
+    }
+
+    public function extendSession(Request $request, string $server, string $database)
+    {
+        [$server, $database] = $this->access->resolve($request->user(), $server, $database);
+        $channel = $this->sessionChannel($request);
+        if ($channel === null) {
+            return $this->sessionPolicyError();
+        }
+        try {
+            $session = $this->sessions->extend($channel, $request->user()->id, $server->id, $database->id);
+        } catch (ViewerSessionException $exception) {
+            return $this->sessionError($exception);
+        }
+
+        return response()->json(['data' => [
+            'expiresAt' => $session->expiresAt->toISOString(),
+            'maxExpiresAt' => $session->maxExpiresAt->toISOString(),
+            'serverNow' => $session->serverNow->toISOString(),
+        ]])->header('Cache-Control', 'no-store');
+    }
+
+    public function closeSession(Request $request, string $server, string $database)
+    {
+        $channel = $this->sessionChannel($request);
+        if ($channel === null) {
+            return $this->sessionPolicyError();
+        }
+        $server = Server::query()->where('uuid_short', $server)->firstOrFail();
+        $database = $server->databases()->whereKey($database)->firstOrFail();
+        try {
+            $this->sessions->close($channel, $request->user()->id, $server->id, $database->id);
+        } catch (ViewerSessionException $exception) {
+            return $this->sessionError($exception);
+        }
+
+        return response()->json(['data' => ['closed' => true]])->header('Cache-Control', 'no-store');
     }
 
     public function ai(Request $request, string $server, string $database, AiBroker $broker)
@@ -278,6 +318,27 @@ class ViewerController
             'error' => 'This operation cannot be executed atomically.',
             'code' => 'TRANSACTION_NOT_ATOMIC',
         ], 422)->header('Cache-Control', 'no-store');
+    }
+
+    private function sessionPolicyError()
+    {
+        return response()->json(['error' => 'Viewer session request not permitted.'], 422)
+            ->header('Cache-Control', 'no-store');
+    }
+
+    private function sessionChannel(Request $request): ?string
+    {
+        try {
+            $payload = json_decode($request->getContent(), true, 8, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return null;
+        }
+        if (!is_array($payload) || array_is_list($payload) || !$this->hasExactKeys($payload, ['channel'])) {
+            return null;
+        }
+        $channel = $payload['channel'] ?? null;
+
+        return is_string($channel) && preg_match('/\A[A-Za-z0-9_-]{43}\z/D', $channel) ? $channel : null;
     }
 
     private function validAiMessages(mixed $messages): bool
