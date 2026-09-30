@@ -33,7 +33,7 @@ class DatabaseViewerPackageTest(unittest.TestCase):
         archive_path, digest = packager.package_plugin(REPO)
         repeated_path, repeated_digest = packager.package_plugin(REPO)
 
-        self.assertEqual("database-viewer-0.4.0.zip", archive_path.name)
+        self.assertEqual("database-viewer-0.5.0.zip", archive_path.name)
         self.assertEqual(64, len(digest))
         self.assertEqual(archive_path, repeated_path)
         self.assertEqual(digest, repeated_digest)
@@ -54,23 +54,42 @@ class DatabaseViewerPackageTest(unittest.TestCase):
         self.assertEqual(digest, hashlib.sha256(archive_path.read_bytes()).hexdigest())
 
         required_runtime = {
+            "database-viewer/database/migrations/001_create_database_viewer_sessions_table.php",
+            "database-viewer/src/Console/Commands/PruneViewerSessionsCommand.php",
             "database-viewer/src/Enums/SqlAccessMode.php",
             "database-viewer/src/Exceptions/DatabaseStatementException.php",
+            "database-viewer/src/Exceptions/ViewerSessionException.php",
+            "database-viewer/src/Models/ViewerSession.php",
+            "database-viewer/src/Services/BrokerResponseGuard.php",
             "database-viewer/src/Services/GeneralSqlPolicy.php",
+            "database-viewer/src/Services/ManagedTransactionPolicy.php",
+            "database-viewer/src/Services/SqlStatementInspector.php",
+            "database-viewer/src/Services/ViewerSessionManager.php",
+            "database-viewer/src/ValueObjects/ViewerSessionHandle.php",
         }
         self.assertTrue(required_runtime.issubset(expected_paths))
+        self.assertNotIn("database-viewer/src/Services/ViewerContext.php", expected_paths)
+        self.assertFalse(any("database-viewer-ai-token.txt" in path for path in expected_paths))
 
     def test_release_documentation_describes_full_and_read_only_sql(self):
         readme = (REPO / "database-viewer" / "README.md").read_text(encoding="utf-8")
         for expected in [
-            "Database Viewer 0.4.0",
+            "Database Viewer 0.5.0",
             "Full SQL access",
             "Read-only SQL access",
             "64 KiB",
             "100 statements",
-            "non-atomic",
+            "TRANSACTION_NOT_ATOMIC",
             "MariaDB account",
             "AI-generated SQL",
+            "15-minute",
+            "Extend",
+            "two-hour",
+            "Close",
+            "20 active",
+            "24 hours",
+            "server time",
+            "migration",
         ]:
             self.assertIn(expected, readme)
 
